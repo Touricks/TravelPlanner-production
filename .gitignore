@@ -1,0 +1,78 @@
+# ========================================
+# Project Root .gitignore
+# 2026-01-12
+# ========================================
+
+# === 私密文件 ===
+.env
+.env.*
+!.env.example
+!.env.*.example
+.mcp.json
+credentials.json
+*.pem
+*.key
+
+# === 文档文件 ===
+*.md
+docs/
+RAGdatabase/
+
+# === Claude Code ===
+.claude/
+
+# === IDE ===
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+Thumbs.db
+
+# === 大文件/二进制 (>10MB) ===
+toolbox
+data/
+*.json
+*.pack
+*.jar
+!**/src/**/resources/*.json
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# === Node.js ===
+node_modules/
+.next/
+.cache/
+
+# === Java/Gradle ===
+.gradle/
+build/
+out/
+target/
+*.class
+*.war
+
+# === 日志 ===
+*.log
+logs/
+
+# === 临时文件 ===
+*.tmp
+*.temp
+*.swp
+*.swo
+*~

@@ -1,0 +1,63 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.3'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'org.laioffer'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    
+    // JPA
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // CORE
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // Auto-load .env files
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+    
+    // PostgreSQL driver
+    implementation 'org.postgresql:postgresql'
+    
+    // Hibernate Types for JSONB support
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+
+    // PostGIS support
+    implementation 'org.hibernate.orm:hibernate-spatial:6.1.7.Final' // Hibernate spatial for location search
+    implementation 'org.locationtech.jts:jts:1.19.0' // Geometry data type support (e.g. Point, Polygon)
+    
+    // LangChain4j dependencies
+    implementation 'dev.langchain4j:langchain4j-spring-boot-starter:0.36.2'
+    implementation 'dev.langchain4j:langchain4j-open-ai-spring-boot-starter:0.36.2'
+    implementation 'dev.langchain4j:langchain4j:0.36.2'
+    
+    // JWT dependencies
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+    
+    // Test dependencies
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'com.h2database:h2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRAG Travel Planner - Chat Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #1a73e8;
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 500;
+        }
+        .session-info {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        .container {
+            flex: 1;
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-area {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .message.user {
+            background: #1a73e8;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .message.ai {
+            background: white;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .message.error {
+            background: #ffebee;
+            color: #c62828;
+            align-self: center;
+        }
+        .message.system {
+            background: #e3f2fd;
+            color: #1565c0;
+            align-self: center;
+            font-size: 13px;
+        }
+        .features-panel {
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            padding: 12px 16px;
+            font-size: 13px;
+        }
+        .features-panel h3 {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 8px;
+        }
+        .feature-item {
+            background: #f5f5f5;
+            padding: 6px 10px;
+            border-radius: 4px;
+        }
+        .feature-item .label {
+            color: #666;
+            font-size: 11px;
+        }
+        .feature-item .value {
+            color: #333;
+            font-weight: 500;
+        }
+        .feature-item .value.empty {
+            color: #999;
+            font-style: italic;
+        }
+        .input-area {
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            padding: 16px;
+            display: flex;
+            gap: 12px;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 24px;
+            font-size: 15px;
+            outline: none;
+        }
+        .input-area input:focus {
+            border-color: #1a73e8;
+        }
+        .input-area button {
+            padding: 12px 24px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .input-area button:hover {
+            background: #1557b0;
+        }
+        .input-area button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+        .controls button {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background: #e0e0e0;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .config-panel {
+            background: #fff3e0;
+            padding: 12px 16px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .config-panel label {
+            color: #e65100;
+        }
+        .config-panel input {
+            padding: 6px 10px;
+            border: 1px solid #ffcc80;
+            border-radius: 4px;
+            width: 250px;
+        }
+        /* State Debug Panel */
+        .state-panel {
+            background: #f3e5f5;
+            border-top: 1px solid #ce93d8;
+            padding: 12px 16px;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .state-panel h3 {
+            font-size: 12px;
+            color: #7b1fa2;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .state-panel .toggle-btn {
+            font-size: 11px;
+            padding: 2px 8px;
+            background: #7b1fa2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .state-section {
+            background: white;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 8px;
+        }
+        .state-section h4 {
+            font-size: 11px;
+            color: #7b1fa2;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .state-section h4 .badge {
+            background: #7b1fa2;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+        }
+        .state-section h4 .badge.success {
+            background: #2e7d32;
+        }
+        .state-section h4 .badge.warning {
+            background: #f57c00;
+        }
+        .state-section pre {
+            background: #fafafa;
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .poi-card {
+            background: #e8f5e9;
+            padding: 6px 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .poi-card .poi-name {
+            font-weight: 600;
+            color: #2e7d32;
+        }
+        .poi-card .poi-meta {
+            color: #666;
+            font-size: 10px;
+        }
+        .day-card {
+            background: #e3f2fd;
+            padding: 8px;
+            margin: 6px 0;
+            border-radius: 4px;
+        }
+        .day-card .day-header {
+            font-weight: 600;
+            color: #1565c0;
+            margin-bottom: 4px;
+        }
+        .day-card .stop-item {
+            background: white;
+            padding: 4px 6px;
+            margin: 3px 0;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+        .day-card .stop-time {
+            color: #1565c0;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CRAG Travel Planner</h1>
+        <div class="session-info" id="sessionInfo">Session: -</div>
+    </div>
+
+    <div class="config-panel">
+        <label>API Base URL:</label>
+        <input type="text" id="apiBase" value="http://localhost:8000/api/v1" />
+        <div class="controls">
+            <button onclick="newSession()">New Session</button>
+            <button onclick="startChat()">Start Chat</button>
+        </div>
+    </div>
+
+    <div class="config-panel" style="background: #e8f5e9; border-top: 1px solid #c8e6c9;">
+        <label style="color: #2e7d32;">Recover Session:</label>
+        <input type="text" id="sessionIdInput" placeholder="Enter session ID (e.g., abc12345-...)" style="border-color: #a5d6a7; width: 300px;" />
+        <div class="controls">
+            <button onclick="recoverSession()" style="background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32;">Recover</button>
+            <button onclick="copySessionId()" style="background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32;">Copy Current ID</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="chat-area" id="chatArea">
+            <div class="message system">Click "Start Chat" to begin a new conversation</div>
+        </div>
+
+        <div class="features-panel" id="featuresPanel" style="display: none;">
+            <h3>Extracted Features</h3>
+            <div class="features-grid" id="featuresGrid"></div>
+        </div>
+
+        <!-- State Debug Panel for Backend Integration -->
+        <div class="state-panel" id="statePanel" style="display: none;">
+            <h3>
+                Backend State (Java Integration)
+                <button class="toggle-btn" onclick="toggleStatePanel()">Hide</button>
+            </h3>
+            <div id="stateContent"></div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Type your message..."
+                   onkeypress="if(event.key==='Enter') sendMessage()" disabled />
+            <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let isLoading = false;
+        let lastResponse = null; // Store full response for debugging
+
+        function getApiBase() {
+            return document.getElementById('apiBase').value.replace(/\/$/, '');
+        }
+
+        function toggleStatePanel() {
+            const panel = document.getElementById('statePanel');
+            const btn = panel.querySelector('.toggle-btn');
+            const content = document.getElementById('stateContent');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                btn.textContent = 'Hide';
+            } else {
+                content.style.display = 'none';
+                btn.textContent = 'Show';
+            }
+        }
+
+        function updateStatePanel(data) {
+            const panel = document.getElementById('statePanel');
+            const content = document.getElementById('stateContent');
+
+            panel.style.display = 'block';
+            lastResponse = data;
+
+            let html = '';
+
+            // Plan Ready Status
+            const planReady = data.plan_ready || false;
+            html += `
+                <div class="state-section">
+                    <h4>plan_ready <span class="badge ${planReady ? 'success' : 'warning'}">${planReady}</span></h4>
+                    <pre>Java后端可保存: ${planReady ? '是 ✓' : '否 ✗'}</pre>
+                </div>
+            `;
+
+            // Recommended POIs
+            const pois = data.recommended_pois || [];
+            html += `
+                <div class="state-section">
+                    <h4>recommended_pois <span class="badge">${pois.length} items</span></h4>
+            `;
+            if (pois.length > 0) {
+                pois.forEach((poi, idx) => {
+                    html += `
+                        <div class="poi-card">
+                            <div class="poi-name">${idx + 1}. ${poi.name || 'N/A'}</div>
+                            <div class="poi-meta">
+                                ID: ${poi.id || 'N/A'} |
+                                City: ${poi.city || 'N/A'} |
+                                Category: ${poi.primary_category || 'N/A'} |
+                                Rating: ${poi.rating || 'N/A'}
+                            </div>
+                            <div class="poi-meta">
+                                Address: ${poi.address || 'N/A'} |
+                                Lat/Lng: ${poi.latitude || 0}, ${poi.longitude || 0}
+                            </div>
+                        </div>
+                    `;
+                });
+            } else {
+                html += `<pre style="color: #f57c00;">空 (无POI数据)</pre>`;
+            }
+            html += `</div>`;
+
+            // Suggested Plan
+            const plan = data.suggested_plan;
+            html += `
+                <div class="state-section">
+                    <h4>suggested_plan <span class="badge ${plan ? 'success' : 'warning'}">${plan ? 'Available' : 'Empty'}</span></h4>
+            `;
+            if (plan && plan.days && plan.days.length > 0) {
+                html += `<div style="font-size: 11px; color: #666; margin-bottom: 6px;">
+                    目的地: ${plan.destination || 'N/A'} |
+                    日期: ${plan.start_date || 'N/A'} ~ ${plan.end_date || 'N/A'} |
+                    天数: ${plan.total_days || 'N/A'}
+                </div>`;
+                plan.days.forEach(day => {
+                    html += `
+                        <div class="day-card">
+                            <div class="day-header">Day ${day.day_number}: ${day.theme || 'No theme'} (${day.date || 'N/A'})</div>
+                    `;
+                    if (day.stops && day.stops.length > 0) {
+                        day.stops.forEach(stop => {
+                            html += `
+                                <div class="stop-item">
+                                    <span class="stop-time">${stop.arrival_time || '??:??'} - ${stop.departure_time || '??:??'}</span>
+                                    <strong>${stop.poi_name || stop.poi_id || 'Unknown'}</strong>
+                                    (${stop.duration_minutes || 0}min)
+                                    ${stop.activity ? `<br><em>${stop.activity}</em>` : ''}
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += `<div style="color: #f57c00; font-size: 10px;">无停靠点数据</div>`;
+                    }
+                    html += `</div>`;
+                });
+            } else {
+                html += `<pre style="color: #f57c00;">空或null (无行程数据)</pre>`;
+            }
+            html += `</div>`;
+
+            // Raw JSON (collapsible)
+            html += `
+                <div class="state-section">
+                    <h4>Raw Response JSON</h4>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                </div>
+            `;
+
+            content.innerHTML = html;
+        }
+
+        function addMessage(content, type) {
+            const chatArea = document.getElementById('chatArea');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.textContent = content;
+            chatArea.appendChild(msg);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function updateSessionInfo() {
+            const info = document.getElementById('sessionInfo');
+            info.textContent = sessionId ? `Session: ${sessionId.slice(0, 8)}...` : 'Session: -';
+        }
+
+        function updateFeatures(features, complete) {
+            const panel = document.getElementById('featuresPanel');
+            const grid = document.getElementById('featuresGrid');
+
+            if (!features) {
+                panel.style.display = 'none';
+                return;
+            }
+
+            panel.style.display = 'block';
+            grid.innerHTML = '';
+
+            const fields = [
+                { key: 'destination', label: 'Destination' },
+                { key: 'travel_days', label: 'Days' },
+                { key: 'interests', label: 'Interests' },
+                { key: 'budget_meal', label: 'Budget/Meal' },
+                { key: 'transportation', label: 'Transport' },
+                { key: 'pois_per_day', label: 'POIs/Day' },
+                { key: 'must_visit', label: 'Must Visit' },
+                { key: 'dietary_options', label: 'Dietary' }
+            ];
+
+            fields.forEach(field => {
+                const item = document.createElement('div');
+                item.className = 'feature-item';
+
+                let value = features[field.key];
+                let displayValue = '-';
+                let isEmpty = true;
+
+                if (value !== null && value !== undefined && value !== '') {
+                    if (Array.isArray(value)) {
+                        displayValue = value.length > 0 ? value.join(', ') : '-';
+                        isEmpty = value.length === 0;
+                    } else {
+                        displayValue = String(value);
+                        isEmpty = false;
+                    }
+                }
+
+                item.innerHTML = `
+                    <div class="label">${field.label}</div>
+                    <div class="value ${isEmpty ? 'empty' : ''}">${displayValue}</div>
+                `;
+                grid.appendChild(item);
+            });
+
+            // Add completion status
+            const statusItem = document.createElement('div');
+            statusItem.className = 'feature-item';
+            statusItem.innerHTML = `
+                <div class="label">Status</div>
+                <div class="value" style="color: ${complete ? '#2e7d32' : '#f57c00'}">
+                    ${complete ? 'Complete' : 'Incomplete'}
+                </div>
+            `;
+            grid.appendChild(statusItem);
+        }
+
+        function setLoading(loading) {
+            isLoading = loading;
+            const btn = document.getElementById('sendBtn');
+            const input = document.getElementById('messageInput');
+
+            if (loading) {
+                btn.innerHTML = '<span class="loading"></span>';
+                btn.disabled = true;
+                input.disabled = true;
+            } else {
+                btn.innerHTML = 'Send';
+                btn.disabled = false;
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        function newSession() {
+            sessionId = null;
+            updateSessionInfo();
+            document.getElementById('chatArea').innerHTML =
+                '<div class="message system">Session cleared. Click "Start Chat" to begin.</div>';
+            document.getElementById('featuresPanel').style.display = 'none';
+            document.getElementById('statePanel').style.display = 'none';
+            document.getElementById('messageInput').disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('sessionIdInput').value = '';
+        }
+
+        function copySessionId() {
+            if (!sessionId) {
+                alert('No active session. Start a chat first.');
+                return;
+            }
+            navigator.clipboard.writeText(sessionId).then(() => {
+                alert(`Session ID copied: ${sessionId}`);
+            }).catch(err => {
+                // Fallback for older browsers
+                const input = document.getElementById('sessionIdInput');
+                input.value = sessionId;
+                input.select();
+                document.execCommand('copy');
+                alert(`Session ID copied: ${sessionId}`);
+            });
+        }
+
+        async function recoverSession() {
+            const inputId = document.getElementById('sessionIdInput').value.trim();
+            if (!inputId) {
+                alert('Please enter a session ID to recover.');
+                return;
+            }
+
+            setLoading(true);
+            document.getElementById('chatArea').innerHTML = '';
+            addMessage(`Recovering session: ${inputId}...`, 'system');
+
+            try {
+                // Send an empty message with the session ID to recover the session
+                const response = await fetch(`${getApiBase()}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: inputId,
+                        message: ''  // Empty message triggers greeting/continuation
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `HTTP ${response.status}: Session not found or expired`);
+                }
+
+                const data = await response.json();
+                sessionId = data.session_id;
+                updateSessionInfo();
+
+                // Clear the recovery message and show the AI response
+                document.getElementById('chatArea').innerHTML = '';
+                addMessage(`Session recovered successfully!`, 'system');
+                addMessage(data.message, 'ai');
+                updateFeatures(data.user_features, data.feature_complete);
+                updateStatePanel(data);
+
+            } catch (error) {
+                addMessage(`Failed to recover session: ${error.message}`, 'error');
+                addMessage('The session may have expired or does not exist.', 'system');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function startChat() {
+            setLoading(true);
+            document.getElementById('chatArea').innerHTML = '';
+
+            try {
+                const response = await fetch(`${getApiBase()}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: '' })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                sessionId = data.session_id;
+                updateSessionInfo();
+                addMessage(data.message, 'ai');
+                updateFeatures(data.user_features, data.feature_complete);
+                updateStatePanel(data); // Show backend state
+
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function sendMessage() {
+            if (isLoading) return;
+
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            input.value = '';
+            addMessage(message, 'user');
+            setLoading(true);
+
+            try {
+                const response = await fetch(`${getApiBase()}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        message: message
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                sessionId = data.session_id;
+                updateSessionInfo();
+                addMessage(data.message, 'ai');
+                updateFeatures(data.user_features, data.feature_complete);
+                updateStatePanel(data); // Show backend state
+
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+    </script>
+</body>
+</html>

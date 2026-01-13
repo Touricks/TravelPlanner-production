@@ -1,0 +1,146 @@
+database:
+  name: travel_planner
+  tables:
+
+    User:
+      columns:
+        uid:
+          type: string
+          primary_key: true
+          note: Firebase UID
+        email:
+          type: string
+          unique: true
+        created_at:
+          type: timestamp
+        updated_at:
+          type: timestamp
+      relationships:
+        itineraries:
+          type: one_to_many
+          target: Itinerary
+          fk: userId
+
+    Itinerary:
+      columns:
+        id:
+          type: uuid
+          primary_key: true
+        userId:
+          type: string
+          foreign_key: User.uid
+        destinationCity:
+          type: string
+        start_date:
+          type: date
+        end_date:
+          type: date
+        travelMode:
+          type: string
+        budgetInCents:
+          type: int
+        dailyStart:
+          type: time
+        dailyEnd:
+          type: time
+        created_at:
+          type: timestamp
+        updated_at:
+          type: timestamp
+      relationships:
+        plannedDays:
+          type: one_to_many
+          target: PlannedDay
+          fk: itineraryId
+        itineraryPlaces:
+          type: one_to_many
+          target: ItineraryPlace
+          fk: itineraryId
+
+    Place:
+      columns:
+        id:
+          type: uuid
+          primary_key: true
+        external_place_id:
+          type: string
+          note: Google Place ID
+        name:
+          type: string
+        address:
+          type: string
+        location:
+          type: geometry
+          note: PostGIS POINT
+        website:
+          type: string
+        phone:
+          type: string
+        imageUrl:
+          type: string
+        description:
+          type: text
+        openingHours_raw:
+          type: json
+      relationships:
+        itineraries:
+          type: many_to_many
+          target: Itinerary
+          via: ItineraryPlace
+
+    ItineraryPlace:
+      columns:
+        itineraryId:
+          type: uuid
+          foreign_key: Itinerary.id
+        placeId:
+          type: uuid
+          foreign_key: Place.id
+        pinned:
+          type: boolean
+        note:
+          type: text
+        added_at:
+          type: timestamp
+      primary_key: [itineraryId, placeId]
+      unique: [itineraryId, placeId]
+
+    PlannedDay:
+      columns:
+        id:
+          type: uuid
+          primary_key: true
+        itineraryId:
+          type: uuid
+          foreign_key: Itinerary.id
+        date:
+          type: date
+        distance_m:
+          type: int
+        travel_s:
+          type: int
+      relationships:
+        plannedStops:
+          type: one_to_many
+          target: PlannedStop
+          fk: plannedDayId
+
+    PlannedStop:
+      columns:
+        id:
+          type: uuid
+          primary_key: true
+        plannedDayId:
+          type: uuid
+          foreign_key: PlannedDay.id
+        order:
+          type: int
+        placeId:
+          type: uuid
+          foreign_key: Place.id
+        arrivalLocal:
+          type: time
+        departLocal:
+          type: time
+        stayMinutes:
+          type: int

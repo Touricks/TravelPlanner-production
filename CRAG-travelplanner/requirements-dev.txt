@@ -1,0 +1,23 @@
+# 开发依赖
+# 使用: pip install -r requirements-dev.txt
+
+# 首先安装核心依赖
+-r requirements.txt
+
+# 测试
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# 代码质量
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.7.0
+
+# 类型检查
+types-requests>=2.31.0
+types-PyYAML>=6.0.0
+
+# 数据生成工具（用于生成测试POI数据）
+faker>=25.0.0
+geopy>=2.4.0

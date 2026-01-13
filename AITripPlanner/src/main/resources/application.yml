@@ -1,0 +1,76 @@
+spring:
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  cloud:
+    gcp:
+      sql:
+        instance-connection-name: ${GCP_SQL_INSTANCE_CONNECTION_NAME:null}
+        database-name: ${GCP_SQL_DATABASE_NAME:null}
+  datasource:
+    url: jdbc:postgresql://${DATABASE_URL:localhost}:${DATABASE_PORT:5434}/${DATABASE_NAME:TravelPlanner}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:secret}
+    driver-class-name: org.postgresql.Driver
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+    
+  jpa:
+    hibernate:
+      ddl-auto: ${DDL_AUTO:update}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+  sql:
+    init:
+      mode: never  # Let JPA handle everything
+
+logging:
+  level:
+    org.apache.coyote.http11.Http11InputBuffer: TRACE
+    org.springframework.jdbc.datasource.init: DEBUG  # Enable SQL init logging
+    org.springframework.jdbc.core: DEBUG  # Enable JDBC logging
+    org.springframework.boot.sql.init: DEBUG  # Enable SQL init debugging
+    org.hibernate.SQL: DEBUG  # Enable SQL logging
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE  # Enable parameter logging
+    io.hypersistence.utils: INFO
+
+travelplanner:
+  jwt:
+    secret-key: ${JWT_SECRET_KEY}
+
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173}
+
+# LangChain4j configuration
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: ${OPENAI_API_KEY}
+      model-name: ${OPENAI_MODEL}
+      max_completion_tokens: 16000
+      timeout: 90s
+      max-retries: 3
+      log-requests: true
+      log-responses: true

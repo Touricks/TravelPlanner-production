@@ -1,0 +1,43 @@
+# 根据 pyproject.toml 生成
+# 使用: pip install -r requirements.txt
+
+# LangChain生态
+langchain>=1.0.0
+langchain-core>=1.2.0
+langchain-openai>=1.1.0
+langgraph>=1.0.0
+langgraph-checkpoint>=3.0.0
+langsmith>=0.4.0
+
+# OceanBase向量数据库
+langchain-oceanbase>=0.2.7
+pyobvector>=0.2.20
+pymysql>=1.1.0
+aiomysql>=0.3.0
+sqlalchemy>=2.0.0
+sqlglot>=28.0.0
+
+# LLM和工具
+openai>=2.14.0
+tiktoken>=0.7.0
+
+# 配置和环境
+pydantic>=2.7.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# 工具库
+tenacity>=9.0.0
+requests>=2.32.0
+httpx>=0.28.0
+
+# 数据处理
+pandas>=2.0.0
+numpy>=2.0.0
+
+# API服务
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+
+# 加密和安全
+cryptography>=44.0.0
