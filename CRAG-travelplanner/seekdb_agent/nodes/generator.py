@@ -569,7 +569,7 @@ def generator_node(state: CRAGState) -> dict[str, Any]:
         - plan_ready: 是否可保存（Java 集成）
     """
     # 发射进度
-    emit_progress("generator", "正在生成旅行计划...", 80)
+    emit_progress("generator", "Generating travel itinerary...", 80)
 
     # ENTRY LOG
     import sys
@@ -699,7 +699,7 @@ def generator_node(state: CRAGState) -> dict[str, Any]:
         plan_ready = False
 
     # 发射完成进度
-    emit_progress("generator", "计划生成完成", 95)
+    emit_progress("generator", "Itinerary complete", 95)
 
     return {
         "final_response": response_content,

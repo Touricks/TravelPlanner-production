@@ -41,9 +41,15 @@ public class ImportController {
             @Validated @RequestBody ImportPlanRequest request,
             @AuthenticationPrincipal UserEntity user) {
 
-        // For E2E testing without authentication, use a default user ID
-        Long userId = (user != null) ? user.getId() : 1L;
-        String userEmail = (user != null) ? user.getEmail() : "test@example.com";
+        // Authentication is now required - user must not be null
+        if (user == null) {
+            logger.warn("Import plan request without authentication");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ImportPlanResponse(null, "Authentication required", 0, 0));
+        }
+
+        Long userId = user.getId();
+        String userEmail = user.getEmail();
 
         logger.info("Import plan request from user: {}, CRAG session: {}",
                 userEmail, request.getCragSessionId());

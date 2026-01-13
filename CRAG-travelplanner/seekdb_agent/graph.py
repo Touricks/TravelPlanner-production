@@ -139,7 +139,7 @@ def create_search_agent_node(
         )
 
         # 发射进度
-        emit_progress("search", "正在搜索景点数据库...", 25)
+        emit_progress("search", "Searching attractions database...", 25)
 
         print("[SEARCH_AGENT] === ENTRY ===", file=sys.stderr, flush=True)
 
@@ -203,7 +203,7 @@ def create_search_agent_node(
 
         # 发射搜索完成进度
         final_count = len(result_dict.get("search_results", []))
-        emit_progress("search", f"找到 {final_count} 个景点", 70, count=final_count)
+        emit_progress("search", f"Found {final_count} attractions", 70, count=final_count)
 
         return result_dict
 

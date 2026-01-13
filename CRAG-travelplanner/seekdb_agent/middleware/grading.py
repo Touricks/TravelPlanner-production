@@ -1,11 +1,11 @@
 """
 Document Grading Middleware
 ===========================
-评估 RAG 搜索结果的质量
+Evaluate the quality of RAG search results
 
-Hook 机制：
-- wrap_tool_call: 拦截 search_pois 调用，评估结果质量
-- before_model: 将暂存的评估结果应用到 state
+Hook Mechanism:
+- wrap_tool_call: Intercept search_pois calls, evaluate result quality
+- before_model: Apply cached evaluation results to state
 """
 
 import logging
@@ -28,37 +28,39 @@ logger = logging.getLogger(__name__)
 
 
 class GradeDocuments(BaseModel):
-    """文档评估结果 Schema"""
+    """Document evaluation result schema"""
 
-    binary_score: str = Field(description="文档是否与查询相关，'yes' 或 'no'")
-    reasoning: str = Field(description="评估理由的简要说明")
+    binary_score: str = Field(description="Whether document is relevant to query, 'yes' or 'no'")
+    reasoning: str = Field(description="Brief explanation of the evaluation reasoning")
     must_visit_covered: bool = Field(
         default=True,
-        description="用户指定的 must_visit 地点是否被搜索结果覆盖",
+        description="Whether user-specified must_visit locations are covered by search results",
     )
 
 
-# 评估 Prompt
+# Evaluation Prompt
 GRADE_PROMPT = ChatPromptTemplate.from_template(
-    """你是一个评估检索文档相关性的专家。
+    """**IMPORTANT: You MUST respond in English only.**
 
-**检索到的文档：**
+You are an expert at evaluating document relevance.
+
+**Retrieved Documents:**
 {document}
 
-**用户查询：**
+**User Query:**
 {question}
 
-**用户必去地点（must_visit）：**
+**User Must-Visit Locations:**
 {must_visit}
 
-**评估任务：**
-1. 相关性评估：如果文档包含与查询相关的关键词或语义信息，给出 'yes'，否则 'no'
-2. must_visit 覆盖检查：检查搜索结果是否包含用户指定的必去地点或相关区域的 POI
-   - 如果 must_visit 为空，设置 must_visit_covered=true
-   - 如果 must_visit 有内容但结果中完全没有相关 POI，设置 must_visit_covered=false
-   - 如果 must_visit 中的地点至少部分被覆盖，设置 must_visit_covered=true
+**Evaluation Tasks:**
+1. Relevance evaluation: If document contains keywords or semantic information relevant to query, give 'yes', otherwise 'no'
+2. must_visit coverage check: Check if search results contain POIs for user-specified must-visit locations
+   - If must_visit is empty, set must_visit_covered=true
+   - If must_visit has content but results have no related POIs, set must_visit_covered=false
+   - If must_visit locations are at least partially covered, set must_visit_covered=true
 
-给出评分和简要理由。"""
+Provide score and brief reasoning."""
 )
 
 
@@ -130,7 +132,7 @@ class DocumentGradingMiddleware(AgentMiddleware[CRAGState]):
         if self._pending_grading is not None:
             # 发射评估进度
             quality = self._pending_grading.get("result_quality", "unknown")
-            emit_progress("grading", f"评估搜索结果质量: {quality}", 72, quality=quality)
+            emit_progress("grading", f"Search quality: {quality}", 72, quality=quality)
 
             updates = self._pending_grading
             self._pending_grading = None  # 清空，避免重复应用

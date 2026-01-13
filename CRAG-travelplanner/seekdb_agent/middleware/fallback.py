@@ -1,15 +1,15 @@
 """
 Fallback Middleware
 ===================
-重试耗尽后使用 Google Gemini 联网搜索兜底
+Use Google Gemini web search as fallback after retry exhaustion
 
-设计要点：
-- 将已搜索的 POI 作为 context 传入
-- 提供完整的用户特征信息
-- Gemini 可以：1) 利用现有 POI；2) 联网补充
+Design Points:
+- Pass existing POIs as context
+- Provide complete user feature information
+- Gemini can: 1) Utilize existing POIs; 2) Supplement with web search
 
-Hook 机制：
-- before_model: 检测 retry_count >= max_retry，触发 Gemini 生成
+Hook Mechanism:
+- before_model: Detect retry_count >= max_retry, trigger Gemini generation
 """
 
 import logging
@@ -27,28 +27,30 @@ from seekdb_agent.tools.search import get_last_search_results_raw
 
 logger = logging.getLogger(__name__)
 
-# Fallback Prompt - 包含完整用户特征
-FALLBACK_PROMPT = """你是专业旅游顾问。数据库搜索遇到困难，请结合已有信息和联网搜索能力提供建议。
+# Fallback Prompt - With complete user features
+FALLBACK_PROMPT = """**IMPORTANT: You MUST respond in English only.**
 
-**已搜索到的 POI（供参考）：**
+You are a professional travel advisor. Database search encountered difficulties. Please provide recommendations using existing information and web search capabilities.
+
+**Previously Found POIs (for reference):**
 {existing_pois}
 
-**用户完整需求：**
-- 目的地: {destination}
-- 旅行天数: {travel_days}天
-- 兴趣偏好: {interests}
-- 餐饮预算: {budget_meal}
-- 交通方式: {transportation}
-- 每天景点数: {pois_per_day}个
-- 必去景点: {must_visit}
-- 饮食偏好: {dietary_options}
+**User's Complete Requirements:**
+- Destination: {destination}
+- Travel days: {travel_days} days
+- Interest preferences: {interests}
+- Dining budget: {budget_meal}
+- Transportation: {transportation}
+- Attractions per day: {pois_per_day}
+- Must-visit attractions: {must_visit}
+- Dietary preferences: {dietary_options}
 
-**要求：**
-1. 如果已有 POI 中有符合需求的，优先推荐
-2. 通过联网搜索补充更多符合用户偏好的景点
-3. 按照用户的天数和每天景点数组织行程
-4. 考虑用户的预算和交通偏好
-5. 输出格式参考已有 POI 的信息结构"""
+**Requirements:**
+1. If existing POIs meet the needs, prioritize recommending them
+2. Use web search to supplement more attractions matching user preferences
+3. Organize itinerary according to user's travel days and attractions per day
+4. Consider user's budget and transportation preferences
+5. Output format should reference the existing POI information structure"""
 
 
 class FallbackMiddleware(AgentMiddleware[CRAGState]):
@@ -180,15 +182,15 @@ class FallbackMiddleware(AgentMiddleware[CRAGState]):
 
         # 构建 prompt
         prompt = FALLBACK_PROMPT.format(
-            existing_pois=existing_pois or "无",
-            destination=uf.get("destination") or "未知",
-            travel_days=uf.get("travel_days") or "未指定",
-            interests=", ".join(uf.get("interests", [])) or "未指定",
-            budget_meal=uf.get("budget_meal") or "未指定",
-            transportation=uf.get("transportation") or "未指定",
-            pois_per_day=uf.get("pois_per_day") or "未指定",
-            must_visit=", ".join(uf.get("must_visit", [])) or "无",
-            dietary_options=", ".join(uf.get("dietary_options", [])) or "无",
+            existing_pois=existing_pois or "None",
+            destination=uf.get("destination") or "Unknown",
+            travel_days=uf.get("travel_days") or "Not specified",
+            interests=", ".join(uf.get("interests", [])) or "Not specified",
+            budget_meal=uf.get("budget_meal") or "Not specified",
+            transportation=uf.get("transportation") or "Not specified",
+            pois_per_day=uf.get("pois_per_day") or "Not specified",
+            must_visit=", ".join(uf.get("must_visit", [])) or "None",
+            dietary_options=", ".join(uf.get("dietary_options", [])) or "None",
         )
 
         # 获取原始用户查询
@@ -204,7 +206,9 @@ class FallbackMiddleware(AgentMiddleware[CRAGState]):
             response = self.fallback_llm.invoke(
                 [
                     SystemMessage(content=prompt),
-                    HumanMessage(content=f"请为我推荐旅游景点：{user_query}"),
+                    HumanMessage(
+                        content=f"Please recommend travel attractions for me: {user_query}"
+                    ),
                 ]
             )
             # 处理响应类型
@@ -212,7 +216,7 @@ class FallbackMiddleware(AgentMiddleware[CRAGState]):
                 return str(response.content)
             return str(response)
         except Exception as e:
-            return f"抱歉，搜索遇到困难。请尝试重新描述您的需求。错误信息：{e!s}"
+            return f"Sorry, search encountered difficulties. Please try describing your needs again. Error: {e!s}"
 
     def _format_existing_pois(self, results: Sequence[POIResult | dict[str, Any]]) -> str:
         """
@@ -247,7 +251,7 @@ class FallbackMiddleware(AgentMiddleware[CRAGState]):
             if primary_category:
                 line += f": {primary_category}"
             if rating:
-                line += f", 评分 {rating}"
+                line += f", Rating {rating}"
             lines.append(line)
 
         return "\n".join(lines)

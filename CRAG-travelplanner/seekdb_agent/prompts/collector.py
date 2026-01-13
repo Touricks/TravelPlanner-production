@@ -1,10 +1,12 @@
 """
-Collector Prompt - 特征提取
-============================
-从用户对话中提取结构化的旅游偏好信息
+Collector Prompt - Feature Extraction
+=====================================
+Extract structured travel preferences from user conversations
 """
 
-COLLECTOR_PROMPT = """You are a travel preference extraction expert. Extract ONLY explicitly stated information from user messages.
+COLLECTOR_PROMPT = """**IMPORTANT: You MUST respond in English only. Do not use any other language.**
+
+You are a travel preference extraction expert. Extract ONLY explicitly stated information from user messages.
 
 **CRITICAL RULE: Extract ONLY what the user explicitly says. NEVER assume, infer, or fill in missing information!**
 
@@ -67,14 +69,14 @@ Output:
 NOTE: User ONLY mentioned destination and days. ALL other fields MUST be null or []!
 
 **EXAMPLE 2 - Complete input:**
-User: "我想去杭州玩3天，喜欢历史文化和美食，每餐50元左右，坐公交出行，每天去3个景点"
+User: "I want to visit Hangzhou for 3 days, interested in history and food, budget $50 per meal, by public transit, 3 places per day"
 Output:
 {
-    "destination": "杭州",
+    "destination": "Hangzhou",
     "travel_days": 3,
-    "interests": ["历史文化", "美食"],
+    "interests": ["history", "food"],
     "budget_meal": 50,
-    "transportation": "公共交通",
+    "transportation": "public transit",
     "pois_per_day": 3,
     "must_visit": [],
     "dietary_options": [],

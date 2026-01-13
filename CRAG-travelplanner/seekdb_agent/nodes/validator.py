@@ -196,7 +196,7 @@ def validator_node(state: CRAGState) -> dict[str, Any]:
           → 必须进入 AskUser，等待补充核心字段
     """
     # 发射进度
-    emit_progress("validator", "正在验证旅行参数...", 20)
+    emit_progress("validator", "Validating travel parameters...", 20)
 
     user_features = state.get("user_features")
     messages = state.get("messages", [])

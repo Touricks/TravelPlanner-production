@@ -182,7 +182,14 @@ public class ItineraryController {
         // Convert preferredCategories from List<String> to List<AttractionCategory>
         if (entity.getPreferredCategories() != null) {
             List<AttractionCategory> categories = entity.getPreferredCategories().stream()
-                    .map(AttractionCategory::valueOf)
+                    .map(s -> {
+                        try {
+                            return AttractionCategory.valueOf(s.toUpperCase());
+                        } catch (IllegalArgumentException e) {
+                            return null; // Skip invalid categories
+                        }
+                    })
+                    .filter(c -> c != null)
                     .collect(Collectors.toList());
             response.setPreferredCategories(categories);
         }

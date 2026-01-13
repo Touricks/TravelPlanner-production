@@ -1,10 +1,10 @@
 """
 Query Refiner Middleware
 ========================
-检测 poor 质量结果，修正查询以改善搜索效果
+Detect poor quality results and refine queries to improve search effectiveness
 
-Hook 机制：
-- before_model: 检测 result_quality == "poor"，调用 LLM 修正查询
+Hook Mechanism:
+- before_model: Detect result_quality == "poor", call LLM to refine query
 """
 
 import logging
@@ -23,26 +23,28 @@ logger = logging.getLogger(__name__)
 
 
 class RefinedQuery(BaseModel):
-    """修正后的查询 Schema"""
+    """Refined query schema"""
 
-    refined_query: str = Field(description="优化后的查询文本")
-    modification_reason: str = Field(description="修正原因说明")
+    refined_query: str = Field(description="Optimized query text")
+    modification_reason: str = Field(description="Explanation of modification reason")
 
 
-# 简化版 Refiner Prompt（用于 Middleware）
-REFINER_SYSTEM_PROMPT = """你是一个查询优化专家。根据搜索失败的原因，生成改进的查询。
+# Simplified Refiner Prompt (for Middleware)
+REFINER_SYSTEM_PROMPT = """**IMPORTANT: You MUST respond in English only.**
 
-**修正策略：**
-1. too_few（结果太少）：扩大搜索范围，添加相关关键词
-2. semantic_drift（语义偏移）：添加明确限定词，聚焦核心意图
-3. irrelevant（不相关）：基于用户特征重新构建查询
-4. missing_must_visit（必去地点缺失）：将 must_visit 地点名加入查询，确保搜索覆盖用户指定的必去景点
+You are a query optimization expert. Generate improved queries based on search failure reasons.
 
-**原则：**
-- 避免重复已尝试的查询
-- 保持语义一致性
-- 优先考虑用户核心兴趣
-- 对于 missing_must_visit，优先在查询中包含必去地点的名称"""
+**Refinement Strategies:**
+1. too_few (too few results): Expand search scope, add related keywords
+2. semantic_drift (semantic drift): Add specific qualifiers, focus on core intent
+3. irrelevant (irrelevant): Rebuild query based on user features
+4. missing_must_visit (missing must-visit locations): Add must_visit location names to query to ensure search covers user-specified attractions
+
+**Principles:**
+- Avoid repeating tried queries
+- Maintain semantic consistency
+- Prioritize user's core interests
+- For missing_must_visit, prioritize including must-visit location names in query"""
 
 
 class QueryRefinerMiddleware(AgentMiddleware[CRAGState]):
@@ -130,7 +132,7 @@ class QueryRefinerMiddleware(AgentMiddleware[CRAGState]):
 
         if should_refine:
             # 发射优化进度
-            emit_progress("refiner", f"优化搜索查询 (第{retry_count + 1}次)...", 50)
+            emit_progress("refiner", f"Refining search query (attempt {retry_count + 1})...", 50)
 
             refined = self._refine_query(state)
             if refined:

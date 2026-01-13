@@ -57,9 +57,7 @@ public class AppConfig {
                     .requestMatchers(HttpMethod.GET, "/", "/index.html", "/*.json", "/*.png",
                     "/static/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register", "/api/auth/forgot-password", "/api/auth/reset-password", "/logout").permitAll()
-                    // Temporarily allow import-plan for E2E testing
-                    .requestMatchers(HttpMethod.POST, "/api/import-plan").permitAll()
-                    // Temporarily allow testing of Recommendations and Interest APIs without authentication
+                    // /api/import-plan now requires authentication to ensure correct user ownership
                     .anyRequest().authenticated()
         )
             .sessionManagement(session -> 

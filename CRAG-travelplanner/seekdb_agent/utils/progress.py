@@ -105,8 +105,8 @@ def emit_progress(
         **extra: 额外数据（如 count, quality 等）
 
     Example:
-        emit_progress("search", "正在搜索景点数据库...", 25)
-        emit_progress("search", "找到 18 个景点", 70, count=18)
+        emit_progress("search", "Searching attractions database...", 25)
+        emit_progress("search", "Found 18 attractions", 70, count=18)
     """
     event = {
         "stage": stage,

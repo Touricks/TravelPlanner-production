@@ -109,7 +109,7 @@ def collector_node(state: CRAGState) -> dict[str, Any]:
         - 如果所有重试失败，返回默认空特征
     """
     # 发射进度
-    emit_progress("collector", "正在理解您的旅行需求...", 10)
+    emit_progress("collector", "Understanding your travel preferences...", 10)
 
     # 记录输入消息
     input_messages = state.get("messages", [])
@@ -138,7 +138,7 @@ def collector_node(state: CRAGState) -> dict[str, Any]:
         user_features = _extract_features_with_retry(messages)
         logger.info("[Collector] 特征提取成功")
         logger.info("[Collector] 提取结果: %s", user_features.model_dump())
-        emit_progress("collector", "需求理解完成", 15)
+        emit_progress("collector", "Preferences collected", 15)
     except Exception as e:
         # 重试全部失败，返回默认空特征
         logger.error("[Collector] 特征提取失败: %s", e)
