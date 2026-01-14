@@ -38,7 +38,7 @@ crag:
 # 启动前端 (后台)
 frontend:
 	@echo "Starting Frontend..."
-	cd AITripPlanner/AITripPlannerFE/trip-mate && nohup npm start > /tmp/frontend.log 2>&1 &
+	cd trip-mate && nohup npm start > /tmp/frontend.log 2>&1 &
 	@sleep 5 && lsof -i :3000 | grep LISTEN && echo "Frontend running on port 3000"
 
 # 一键启动所有后端服务
