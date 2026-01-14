@@ -197,6 +197,7 @@ public class ItineraryController {
         response.setAdditionalPreferences(entity.getAdditionalPreferences());
         response.setSeededRecommendations(entity.getSeededRecommendations());
         response.setAiMetadata(entity.getAiMetadata());
+        response.setCragSessionId(entity.getCragSessionId());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
 

@@ -45,6 +45,9 @@ public class ItineraryDetailResponse {
     // AI generation metadata
     private Map<String, Object> aiMetadata;
 
+    // CRAG session ID for conversation restore
+    private String cragSessionId;
+
     // Metadata
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
@@ -196,6 +199,14 @@ public class ItineraryDetailResponse {
 
     public void setAiMetadata(Map<String, Object> aiMetadata) {
         this.aiMetadata = aiMetadata;
+    }
+
+    public String getCragSessionId() {
+        return cragSessionId;
+    }
+
+    public void setCragSessionId(String cragSessionId) {
+        this.cragSessionId = cragSessionId;
     }
 
     public LocalDateTime getCreatedAt() {

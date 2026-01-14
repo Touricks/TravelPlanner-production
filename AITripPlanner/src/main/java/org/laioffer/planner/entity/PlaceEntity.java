@@ -66,6 +66,9 @@ public class PlaceEntity {
     
     @Column(length = 50)
     private String source;
+
+    @Column(name = "google_place_id", length = 100)
+    private String googlePlaceId;
     
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -125,6 +128,9 @@ public class PlaceEntity {
     
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
+
+    public String getGooglePlaceId() { return googlePlaceId; }
+    public void setGooglePlaceId(String googlePlaceId) { this.googlePlaceId = googlePlaceId; }
     
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
