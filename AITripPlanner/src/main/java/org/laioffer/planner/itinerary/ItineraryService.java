@@ -1,11 +1,13 @@
 package org.laioffer.planner.itinerary;
 
 import org.laioffer.planner.model.itinerary.CreateItineraryRequest;
+import org.laioffer.planner.model.itinerary.PinnedPOIResponse;
 import org.laioffer.planner.entity.ItineraryEntity;
 import org.laioffer.planner.entity.UserEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -54,4 +56,22 @@ public interface ItineraryService {
      * @return Optional containing the itinerary with places if found
      */
     Optional<ItineraryEntity> getItineraryWithPlaces(UUID itineraryId);
+
+    /**
+     * Get pinned POIs for an itinerary identified by CRAG session ID.
+     * Used by CRAG integration to sync user's pinned places when continuing a conversation.
+     *
+     * @param cragSessionId CRAG session ID (matches itinerary.cragSessionId)
+     * @return List of pinned POIs in simplified format, empty list if no itinerary found
+     */
+    List<PinnedPOIResponse.PinnedPOIDTO> getPinnedPOIsByCragSessionId(String cragSessionId);
+
+    /**
+     * Get itinerary ID by CRAG session ID.
+     * Used by frontend "Abandon" feature to navigate back to the saved plan.
+     *
+     * @param cragSessionId CRAG session ID
+     * @return Optional containing itinerary UUID if found
+     */
+    Optional<UUID> getItineraryIdByCragSessionId(String cragSessionId);
 }

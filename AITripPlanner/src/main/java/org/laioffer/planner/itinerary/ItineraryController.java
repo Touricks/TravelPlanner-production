@@ -13,6 +13,7 @@ import org.laioffer.planner.entity.UserEntity;
 import org.laioffer.planner.model.itinerary.GetItinerariesResponse;
 import org.laioffer.planner.model.itinerary.ItineraryDetailResponse;
 import org.laioffer.planner.model.itinerary.ItinerarySummaryDTO;
+import org.laioffer.planner.model.itinerary.PinnedPOIResponse;
 import org.laioffer.planner.model.place.PlaceDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,6 +141,45 @@ public class ItineraryController {
 
         ItineraryDetailResponse response = convertToDetailResponse(itineraryOpt.get());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get pinned POIs for an itinerary by CRAG session ID.
+     *
+     * This endpoint is called by CRAG when continuing a conversation to sync
+     * the user's current interested POI list. Returns empty list (not 404) if
+     * no itinerary found, allowing CRAG to gracefully fall back to its cached data.
+     *
+     * @param cragSessionId CRAG session ID (matches itinerary.cragSessionId)
+     * @return HTTP 200 OK with PinnedPOIResponse (may be empty)
+     */
+    @GetMapping("/by-session/{cragSessionId}/pinned-pois")
+    public ResponseEntity<PinnedPOIResponse> getPinnedPOIsByCragSessionId(
+            @PathVariable String cragSessionId) {
+        logger.info("Fetching pinned POIs for cragSessionId: {}", cragSessionId);
+
+        var pinnedPois = itineraryService.getPinnedPOIsByCragSessionId(cragSessionId);
+        var response = new PinnedPOIResponse(pinnedPois);
+
+        logger.info("Returning {} pinned POIs for cragSessionId: {}", pinnedPois.size(), cragSessionId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get itinerary ID by CRAG session ID.
+     * Used by frontend "Abandon" feature to navigate back to saved plan.
+     *
+     * @param cragSessionId CRAG session ID
+     * @return HTTP 200 with itinerary ID, or 404 if not found
+     */
+    @GetMapping("/by-session/{cragSessionId}")
+    public ResponseEntity<java.util.Map<String, String>> getItineraryIdByCragSessionId(
+            @PathVariable String cragSessionId) {
+        logger.info("Looking up itinerary for cragSessionId: {}", cragSessionId);
+
+        return itineraryService.getItineraryIdByCragSessionId(cragSessionId)
+                .map(id -> ResponseEntity.ok(java.util.Map.of("itinerary_id", id.toString())))
+                .orElse(ResponseEntity.notFound().build());
     }
 
     /**

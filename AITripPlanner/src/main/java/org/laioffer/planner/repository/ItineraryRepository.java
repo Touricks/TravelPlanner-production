@@ -48,4 +48,7 @@ public interface ItineraryRepository extends JpaRepository<ItineraryEntity, UUID
     Optional<ItineraryEntity> findByCragSessionId(String cragSessionId);
 
     boolean existsByCragSessionId(String cragSessionId);
+
+    // 按CRAG Session ID和用户ID查询（用于Upsert更新）
+    Optional<ItineraryEntity> findByCragSessionIdAndUserId(String cragSessionId, Long userId);
 }

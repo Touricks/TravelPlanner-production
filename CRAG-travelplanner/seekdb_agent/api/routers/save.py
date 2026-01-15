@@ -15,6 +15,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from seekdb_agent.db.session import get_full_session_data
+from seekdb_agent.utils.geocoding import enrich_pois_sync
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +63,44 @@ def build_import_request(session_data: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
         符合 Java ImportPlanRequest 结构的字典
+
+    Note:
+        POIs without coordinates will be enriched using Google Places API
+        before sending to Java backend.
     """
     user_features = session_data.get("user_features", {})
     pois = session_data.get("recommended_pois", [])
     plan = session_data.get("suggested_plan", {})
+
+    # Check if any POIs are missing coordinates
+    pois_missing_coords = [
+        p
+        for p in pois
+        if p.get("latitude") is None
+        or p.get("longitude") is None
+        or (p.get("latitude") == 0.0 and p.get("longitude") == 0.0)
+    ]
+
+    if pois_missing_coords:
+        logger.info(
+            f"[Save] {len(pois_missing_coords)}/{len(pois)} POIs missing coordinates, "
+            "attempting enrichment via Google Places API"
+        )
+        destination = user_features.get("destination")
+        try:
+            pois = enrich_pois_sync(pois, destination=destination)
+            enriched_count = sum(
+                1
+                for p in pois
+                if p.get("latitude") is not None
+                and p.get("longitude") is not None
+                and not (p.get("latitude") == 0.0 and p.get("longitude") == 0.0)
+            )
+            logger.info(
+                f"[Save] Coordinate enrichment complete: {enriched_count}/{len(pois)} POIs have valid coordinates"
+            )
+        except Exception as e:
+            logger.warning(f"[Save] Coordinate enrichment failed: {e}")
 
     # 转换 pois_per_day 到 travelPace
     pois_per_day = user_features.get("pois_per_day")

@@ -10,19 +10,27 @@ Session Management
 """
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+import httpx
 import pymysql  # type: ignore[import-untyped]
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 # 会话过期时间（小时）
 SESSION_EXPIRE_HOURS = int(os.getenv("SESSION_EXPIRE_HOURS", "24"))
+
+# Java API 配置
+JAVA_API_URL = os.getenv("JAVA_API_URL", "http://localhost:8080")
+JAVA_SYNC_TIMEOUT = float(os.getenv("JAVA_SYNC_TIMEOUT", "5.0"))
 
 
 def _get_db_connection() -> pymysql.Connection:
@@ -135,10 +143,11 @@ def load_session_state(session_id: str) -> dict[str, Any]:
         session_id: 会话 ID
 
     Returns:
-        包含 messages 和 optional_asked 的字典
+        包含 messages, optional_asked, 和 user_features 的字典
         {
             "messages": list[BaseMessage],
-            "optional_asked": bool
+            "optional_asked": bool,
+            "user_features": dict | None
         }
     """
     conn = _get_db_connection()
@@ -153,7 +162,7 @@ def load_session_state(session_id: str) -> dict[str, Any]:
             result = cursor.fetchone()
 
             if not result or not result.get("state"):
-                return {"messages": [], "optional_asked": False}
+                return {"messages": [], "optional_asked": False, "user_features": None}
 
             # 解析 state JSON
             state_data = result["state"]
@@ -164,9 +173,13 @@ def load_session_state(session_id: str) -> dict[str, Any]:
             messages_data = state_data.get("messages", [])
             messages = [_deserialize_message(m) for m in messages_data]
 
+            # 提取 user_features（用于多轮对话特征持久化）
+            user_features = state_data.get("user_features")
+
             return {
                 "messages": messages,
                 "optional_asked": state_data.get("optional_asked", False),
+                "user_features": user_features if user_features else None,
             }
 
     finally:
@@ -368,3 +381,74 @@ def cleanup_expired_sessions() -> int:
 
     finally:
         conn.close()
+
+
+def fetch_pinned_pois_from_java(session_id: str) -> list[dict[str, Any]]:
+    """
+    从 Java 后端获取用户 pinned 的 POI 列表
+
+    当用户继续对话时，调用此函数同步 Java 端的 pinned POI 状态。
+    用户可能在 Java 前端添加/删除了感兴趣的 POI，这些变更需要同步到 CRAG。
+
+    Args:
+        session_id: CRAG session ID（对应 Java 的 itinerary.cragSessionId）
+
+    Returns:
+        POI 字典列表（CRAG 格式），失败时返回空列表
+
+    Note:
+        - 使用短超时（5秒）避免阻塞对话流程
+        - 任何错误都返回空列表（优雅降级）
+        - POI 格式已转换为 CRAG 兼容结构
+    """
+    try:
+        with httpx.Client(timeout=JAVA_SYNC_TIMEOUT) as client:
+            url = f"{JAVA_API_URL}/api/itineraries/by-session/{session_id}/pinned-pois"
+            logger.debug(f"[JavaSync] Fetching pinned POIs from: {url}")
+
+            response = client.get(url)
+            response.raise_for_status()
+
+            data = response.json()
+            java_pois = data.get("pois", [])
+
+            if not java_pois:
+                logger.debug(f"[JavaSync] No pinned POIs found for session {session_id}")
+                return []
+
+            # Convert Java format to CRAG format
+            crag_pois = []
+            for poi in java_pois:
+                crag_pois.append(
+                    {
+                        "id": poi.get("id", ""),
+                        "name": poi.get("name", ""),
+                        "city": poi.get("city"),
+                        "latitude": poi.get("latitude") or 0.0,
+                        "longitude": poi.get("longitude") or 0.0,
+                        "address": poi.get("address", ""),
+                        "description": poi.get("description"),
+                        "editorial_summary": poi.get("description"),  # CRAG alias
+                        "rating": poi.get("rating"),
+                        "primary_category": poi.get("primaryCategory"),
+                        "image_url": poi.get("imageUrl"),
+                        "opening_hours": poi.get("openingHours"),
+                    }
+                )
+
+            logger.info(
+                f"[JavaSync] Fetched {len(crag_pois)} pinned POIs from Java for session {session_id}"
+            )
+            return crag_pois
+
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            f"[JavaSync] Java API returned error for session {session_id}: {e.response.status_code}"
+        )
+        return []
+    except httpx.RequestError as e:
+        logger.warning(f"[JavaSync] Failed to connect to Java API: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"[JavaSync] Unexpected error fetching pinned POIs: {e}")
+        return []

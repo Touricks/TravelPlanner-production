@@ -1,11 +1,14 @@
 package org.laioffer.planner.itinerary;
 
 import org.laioffer.planner.model.itinerary.CreateItineraryRequest;
+import org.laioffer.planner.model.itinerary.PinnedPOIResponse;
 import org.laioffer.planner.model.place.PlaceDTO;
 import org.laioffer.planner.model.common.TravelPace;
 import org.laioffer.planner.entity.ItineraryEntity;
+import org.laioffer.planner.entity.ItineraryPlaceEntity;
 import org.laioffer.planner.entity.PlaceEntity;
 import org.laioffer.planner.entity.UserEntity;
+import org.laioffer.planner.repository.ItineraryPlaceRepository;
 import org.laioffer.planner.repository.ItineraryRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +22,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,15 +37,18 @@ public class ItineraryServiceImpl implements ItineraryService {
     private static final int MAX_STAYING_DAYS = 7;
 
     private final ItineraryRepository itineraryRepository;
+    private final ItineraryPlaceRepository itineraryPlaceRepository;
     private final LangChain4jLLMService llmService;
     private final POIService poiService;
     private final ApplicationEventPublisher eventPublisher;
 
     public ItineraryServiceImpl(ItineraryRepository itineraryRepository,
+                               ItineraryPlaceRepository itineraryPlaceRepository,
                                LangChain4jLLMService llmService,
                                POIService poiService,
                                ApplicationEventPublisher eventPublisher) {
         this.itineraryRepository = itineraryRepository;
+        this.itineraryPlaceRepository = itineraryPlaceRepository;
         this.llmService = llmService;
         this.poiService = poiService;
         this.eventPublisher = eventPublisher;
@@ -295,5 +302,73 @@ public class ItineraryServiceImpl implements ItineraryService {
     public void handleItineraryCreated(ItineraryCreatedEvent event) {
         logger.info("Handling ItineraryCreatedEvent for itinerary: {}", event.getItineraryId());
         generatePlacesAsync(event.getItineraryId(), event.getPoiCount());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PinnedPOIResponse.PinnedPOIDTO> getPinnedPOIsByCragSessionId(String cragSessionId) {
+        logger.debug("Fetching pinned POIs for cragSessionId: {}", cragSessionId);
+
+        // 1. Find itinerary by cragSessionId
+        Optional<ItineraryEntity> itineraryOpt = itineraryRepository.findByCragSessionId(cragSessionId);
+        if (itineraryOpt.isEmpty()) {
+            logger.debug("No itinerary found for cragSessionId: {}", cragSessionId);
+            return Collections.emptyList();
+        }
+
+        UUID itineraryId = itineraryOpt.get().getId();
+
+        // 2. Fetch pinned places with full details
+        List<ItineraryPlaceEntity> pinnedPlaces = itineraryPlaceRepository.findPinnedPlacesWithDetails(itineraryId);
+
+        if (pinnedPlaces.isEmpty()) {
+            logger.debug("No pinned places found for itinerary: {}", itineraryId);
+            return Collections.emptyList();
+        }
+
+        // 3. Convert to DTOs
+        List<PinnedPOIResponse.PinnedPOIDTO> result = pinnedPlaces.stream()
+                .map(this::convertToPinnedPOIDTO)
+                .toList();
+
+        logger.info("Found {} pinned POIs for cragSessionId: {}", result.size(), cragSessionId);
+        return result;
+    }
+
+    /**
+     * Convert ItineraryPlaceEntity to PinnedPOIDTO for CRAG consumption
+     */
+    private PinnedPOIResponse.PinnedPOIDTO convertToPinnedPOIDTO(ItineraryPlaceEntity ipEntity) {
+        PlaceEntity place = ipEntity.getPlace();
+        PinnedPOIResponse.PinnedPOIDTO dto = new PinnedPOIResponse.PinnedPOIDTO();
+
+        dto.setId(place.getId().toString());
+        dto.setName(place.getName());
+
+        // Extract lat/lng directly from PlaceEntity
+        if (place.getLatitude() != null) {
+            dto.setLatitude(place.getLatitude().doubleValue());
+        }
+        if (place.getLongitude() != null) {
+            dto.setLongitude(place.getLongitude().doubleValue());
+        }
+
+        dto.setAddress(place.getAddress());
+        dto.setDescription(place.getDescription());
+        dto.setImageUrl(place.getImageUrl());
+
+        // Note: city, rating, primaryCategory, openingHours may not be directly
+        // available on PlaceEntity - set what's available
+        // These can be extended later if needed
+
+        return dto;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> getItineraryIdByCragSessionId(String cragSessionId) {
+        logger.debug("Looking up itinerary ID for cragSessionId: {}", cragSessionId);
+        return itineraryRepository.findByCragSessionId(cragSessionId)
+                .map(ItineraryEntity::getId);
     }
 }

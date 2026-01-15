@@ -5,12 +5,14 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import ExploreIcon from '@mui/icons-material/Explore';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 const STAGES = [
   { key: 'collector', label: 'Understanding', icon: <AutoAwesomeIcon /> },
   { key: 'validator', label: 'Validating', icon: <VerifiedIcon /> },
   { key: 'search', label: 'Searching', icon: <SearchIcon /> },
   { key: 'grading', label: 'Evaluating', icon: <CheckCircleIcon /> },
+  { key: 'fallback', label: 'AI Generating', icon: <SmartToyIcon /> },
   { key: 'generator', label: 'Generating', icon: <ExploreIcon /> },
 ];
 

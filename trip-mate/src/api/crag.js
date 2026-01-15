@@ -59,4 +59,23 @@ export const recoverSession = async (sessionId) => {
   return sendChatMessage(sessionId, '');
 };
 
+// Java API Base URL
+const JAVA_API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8080/api';
+
+/**
+ * Get itinerary ID by CRAG session ID (from Java backend)
+ * Used for "Abandon" feature to navigate back to saved plan
+ * @param {string} sessionId - CRAG session ID
+ * @returns {Promise<{itinerary_id: string}|null>}
+ */
+export const getItineraryBySession = async (sessionId) => {
+  try {
+    const response = await axios.get(`${JAVA_API_BASE}/itineraries/by-session/${sessionId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get itinerary by session:', error);
+    return null;
+  }
+};
+
 export default cragApi;

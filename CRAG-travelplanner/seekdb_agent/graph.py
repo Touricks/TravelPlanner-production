@@ -63,8 +63,10 @@ def route_after_validation(state: CRAGState) -> str:
 
     判断逻辑：
     1. 核心字段缺失 → ask_user(补充核心信息)
-    2. 核心完整但可选字段缺失且未询问 → ask_user(询问可选信息)
-    3. 特征完整 → search_agent(执行搜索)
+    2. 核心字段完整 → search_agent(执行搜索)
+
+    注意：不再询问可选字段。当核心字段完整时，直接进入搜索流程。
+    这避免了 ask_user LLM 在所有必填信息齐全后误生成完整行程的问题。
 
     Args:
         state: 当前工作流状态
@@ -73,15 +75,11 @@ def route_after_validation(state: CRAGState) -> str:
         下一个节点名称: "ask_user" 或 "search_agent"
     """
     feature_complete = state.get("feature_complete", False)
-    missing_features = state.get("missing_features", [])
-    optional_asked = state.get("optional_asked", False)
 
     if not feature_complete:
         return "ask_user"
 
-    if len(missing_features) > 0 and not optional_asked:
-        return "ask_user"
-
+    # 核心字段完整，直接进入搜索（不再询问可选字段）
     return "search_agent"
 
 

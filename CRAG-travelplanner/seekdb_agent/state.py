@@ -110,6 +110,7 @@ class CRAGState(AgentState):
 
     # ===== 用户特征 =====
     user_features: NotRequired[UserFeatures]  # 提取的用户偏好
+    previous_user_features: NotRequired[dict]  # 上一轮对话的用户特征（用于多轮合并）
     feature_complete: NotRequired[bool]  # 特征是否完整
     missing_features: NotRequired[list[str]]  # 缺失的必填特征
 
@@ -136,6 +137,10 @@ class CRAGState(AgentState):
     recommended_pois: NotRequired[list[POIResult]]  # 推荐的 POI 列表
     suggested_plan: NotRequired[dict]  # 结构化行程安排
     plan_ready: NotRequired[bool]  # 计划是否可保存
+
+    # ===== 继续对话支持 =====
+    previous_pois: NotRequired[list[dict]]  # 之前的 POI 列表（用于继续对话）
+    previous_plan: NotRequired[dict]  # 之前的行程安排（用于继续对话）
 
 
 # ===== 常量定义 =====

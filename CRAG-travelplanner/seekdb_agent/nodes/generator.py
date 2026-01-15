@@ -26,6 +26,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from seekdb_agent.llm import create_fallback_llm, create_llm
 from seekdb_agent.prompts.generator import GENERATOR_PROMPT
 from seekdb_agent.state import CRAGState, POIResult, UserFeatures
+from seekdb_agent.utils.geocoding import enrich_pois_sync
 from seekdb_agent.utils.progress import emit_progress
 
 # 配置日志输出到 stderr（确保立即显示）
@@ -358,9 +359,15 @@ def _generate_fallback_response(user_features: dict[str, Any]) -> dict[str, Any]
 
     logger.info(f"[Fallback] 触发 Gemini 生成，目的地: {destination}")
 
+    # 进度推送：开始Fallback
+    emit_progress("fallback", "Generating itinerary with AI...", 82)
+
     try:
         # 使用 Fallback LLM（优先 Gemini，支持联网搜索）
         fallback_llm = create_fallback_llm(temperature=0.7)
+
+        # 进度推送：Gemini调用中
+        emit_progress("fallback", "Creating personalized recommendations...", 85)
 
         # 尝试结构化输出
         try:
@@ -375,10 +382,15 @@ def _generate_fallback_response(user_features: dict[str, Any]) -> dict[str, Any]
                 logger.info(f"[Fallback] 结构化输出成功，天数: {len(raw_output.daily_itinerary)}")
                 response_content = raw_output.message
 
-                # 从结构化输出生成 POI 和 Plan
+                # 进度推送：AI推荐完成
+                emit_progress("fallback", "AI recommendations ready", 88)
+
+                # 从结构化输出生成 POI 和 Plan（包含坐标丰富）
+                emit_progress("fallback", "Enriching location data...", 90)
                 fallback_pois = _extract_pois_from_itinerary(
                     raw_output.daily_itinerary, destination
                 )
+                emit_progress("fallback", "Location data complete", 93)
                 suggested_plan = _convert_fallback_to_plan(
                     raw_output.daily_itinerary, user_features, fallback_pois
                 )
@@ -422,14 +434,14 @@ def _extract_pois_from_itinerary(
     daily_itinerary: list[DayItinerary], destination: str
 ) -> list[dict[str, Any]]:
     """
-    从 Fallback 生成的行程中提取 POI 信息
+    从 Fallback 生成的行程中提取 POI 信息，并使用 Google Places API 丰富坐标
 
     Args:
         daily_itinerary: 每日行程列表
         destination: 目的地
 
     Returns:
-        POI 字典列表（模拟 search_results 格式）
+        POI 字典列表（模拟 search_results 格式，包含真实坐标）
     """
     pois = []
     seen_ids = set()
@@ -451,8 +463,8 @@ def _extract_pois_from_itinerary(
                     "name": poi_id.replace("_", " ").title(),  # 从 ID 推断名称
                     "city": destination,
                     "state": None,
-                    "latitude": 0.0,
-                    "longitude": 0.0,
+                    "latitude": None,  # Will be enriched by geocoding
+                    "longitude": None,  # Will be enriched by geocoding
                     "rating": None,
                     "reviews_count": None,
                     "price_level": None,
@@ -464,6 +476,18 @@ def _extract_pois_from_itinerary(
                     "score": 0.8,  # Fallback 生成的 POI 给固定分数
                 }
             )
+
+    # Enrich POIs with coordinates using Google Places API
+    if pois:
+        logger.info(f"[Fallback] Enriching {len(pois)} POIs with coordinates via Google Places API")
+        try:
+            pois = enrich_pois_sync(pois, destination=destination)
+            enriched_count = sum(1 for p in pois if p.get("latitude") and p.get("longitude"))
+            logger.info(
+                f"[Fallback] Coordinate enrichment complete: {enriched_count}/{len(pois)} POIs have coordinates"
+            )
+        except Exception as e:
+            logger.warning(f"[Fallback] Coordinate enrichment failed: {e}")
 
     return pois
 
@@ -632,8 +656,13 @@ def generator_node(state: CRAGState) -> dict[str, Any]:
     search_results = state.get("search_results", [])
     user_features = state.get("user_features")
 
+    # 获取之前的 POIs 和 Plan（用于继续对话场景）
+    previous_pois = state.get("previous_pois", [])
+    _previous_plan = state.get("previous_plan", {})  # Reserved for future use
+
     # DEBUG: 日志输出状态信息
     logger.info(f"search_results count: {len(search_results) if search_results else 0}")
+    logger.info(f"previous_pois count: {len(previous_pois) if previous_pois else 0}")
     logger.info(f"user_features: {user_features}")
     logger.info(f"fallback_triggered: {state.get('fallback_triggered', False)}")
     logger.info(f"state keys: {list(state.keys())}")
@@ -647,11 +676,16 @@ def generator_node(state: CRAGState) -> dict[str, Any]:
     else:
         user_features_dict = {}
 
-    # 防御性检查：如果搜索结果为空，触发 Fallback 生成
-    # 这是对 FallbackMiddleware 的补充，防止 Agent 跳过 search_pois 工具
+    # 防御性检查：如果搜索结果为空
+    # 1. 优先使用之前的 POIs（继续对话场景）
+    # 2. 如果也没有之前的 POIs，触发 Fallback 生成
     if not search_results:
-        logger.warning("search_results is empty, triggering fallback in generator_node")
-        return _generate_fallback_response(user_features_dict)
+        if previous_pois:
+            logger.info("search_results is empty but previous_pois exists, using previous data")
+            search_results = previous_pois  # type: ignore[assignment]  # POI dicts are compatible
+        else:
+            logger.warning("search_results is empty, triggering fallback in generator_node")
+            return _generate_fallback_response(user_features_dict)
 
     # 格式化输入（包含 POI ID 以便结构化输出引用）
     formatted_results = _format_search_results_for_structured(search_results)

@@ -60,7 +60,14 @@ public interface ItineraryPlaceRepository extends JpaRepository<ItineraryPlaceEn
     @Modifying
     @Transactional
     void deleteByItineraryIdAndPlaceId(UUID itineraryId, UUID placeId);
-    
+
+    /**
+     * Delete all places for an itinerary (used during plan update/upsert)
+     */
+    @Modifying
+    @Transactional
+    void deleteAllByItineraryId(UUID itineraryId);
+
     /**
      * Count places in an itinerary
      */
@@ -113,4 +120,13 @@ public interface ItineraryPlaceRepository extends JpaRepository<ItineraryPlaceEn
            "WHERE ip.id = :itineraryPlaceId AND u.id = :userId")
     Optional<ItineraryPlaceEntity> findByIdAndUserId(@Param("itineraryPlaceId") UUID itineraryPlaceId,
                                                      @Param("userId") Long userId);
+
+    /**
+     * Find pinned places with full PlaceEntity details for a given itinerary.
+     * Used by CRAG integration to sync pinned POIs when continuing a conversation.
+     */
+    @Query("SELECT ip FROM ItineraryPlaceEntity ip " +
+           "JOIN FETCH ip.place p " +
+           "WHERE ip.itineraryId = :itineraryId AND ip.pinned = true")
+    List<ItineraryPlaceEntity> findPinnedPlacesWithDetails(@Param("itineraryId") UUID itineraryId);
 }

@@ -73,17 +73,21 @@ class TestRouteAfterValidation:
         assert route_after_validation(state) == "search_agent"
 
     def test_feature_complete_optional_missing_not_asked(self):
-        """核心完整但可选缺失且未询问 → ask_user"""
+        """核心完整但可选缺失 → search_agent (不再询问可选字段)
+
+        2026-01-16: 修改行为 - 当核心字段完整时，直接进入搜索，不再询问可选字段
+        这避免了 ask_user LLM 误生成完整行程的问题
+        """
         state: CRAGState = {
             "messages": [],
             "feature_complete": True,
             "missing_features": ["must_visit", "dietary_options"],
             "optional_asked": False,
         }
-        assert route_after_validation(state) == "ask_user"
+        assert route_after_validation(state) == "search_agent"
 
     def test_feature_complete_optional_missing_already_asked(self):
-        """核心完整，可选缺失但已询问 → search_agent"""
+        """核心完整，可选缺失（optional_asked 不再影响路由）→ search_agent"""
         state: CRAGState = {
             "messages": [],
             "feature_complete": True,

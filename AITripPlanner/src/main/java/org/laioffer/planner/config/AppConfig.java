@@ -57,6 +57,8 @@ public class AppConfig {
                     .requestMatchers(HttpMethod.GET, "/", "/index.html", "/*.json", "/*.png",
                     "/static/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register", "/api/auth/forgot-password", "/api/auth/reset-password", "/logout").permitAll()
+                    // CRAG internal sync endpoints - no user auth needed
+                    .requestMatchers(HttpMethod.GET, "/api/itineraries/by-session/*").permitAll()
                     // /api/import-plan now requires authentication to ensure correct user ownership
                     .anyRequest().authenticated()
         )

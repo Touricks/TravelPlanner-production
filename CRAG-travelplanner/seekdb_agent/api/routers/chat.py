@@ -28,6 +28,7 @@ from seekdb_agent.api.schemas import (
     SuggestedStop,
 )
 from seekdb_agent.db.session import (
+    fetch_pinned_pois_from_java,
     generate_session_id,
     get_full_session_data,
     load_session_state,
@@ -177,10 +178,27 @@ async def chat(request: ChatRequest) -> ChatResponse:
         session_id = request.session_id or generate_session_id()
 
         if request.session_id:
-            # 加载完整会话状态（包括 messages 和 optional_asked）
+            # 加载完整会话状态（包括 messages, optional_asked, user_features）
             session_state = load_session_state(request.session_id)
             messages = session_state["messages"]
             optional_asked = session_state["optional_asked"]
+            previous_user_features = session_state.get("user_features")
+
+            # 获取完整会话数据（包括 POIs 和 Plan，用于继续对话）
+            full_session_data = get_full_session_data(request.session_id)
+            ob_pois = full_session_data.get("recommended_pois", []) if full_session_data else []
+            previous_plan = full_session_data.get("suggested_plan", {}) if full_session_data else {}
+
+            # 同步 Java 端的 pinned POIs（用户可能在 Java 前端修改了兴趣列表）
+            java_pinned_pois = fetch_pinned_pois_from_java(request.session_id)
+
+            # 优先使用 Java 端的 pinned POIs（用户主动保存的），否则使用 OceanBase 缓存
+            if java_pinned_pois:
+                logger.info(f"Using {len(java_pinned_pois)} pinned POIs from Java backend")
+                previous_pois = java_pinned_pois
+            else:
+                logger.debug("No Java pinned POIs, using OceanBase previous_pois")
+                previous_pois = ob_pois
 
             # 快速恢复模式：如果有 session_id 但没有新消息，直接返回保存的状态
             # 这样可以实现毫秒级会话恢复，无需调用 LLM
@@ -189,16 +207,28 @@ async def chat(request: ChatRequest) -> ChatResponse:
         else:
             messages = []  # 新会话，空消息 → 触发冷启动问候
             optional_asked = False
+            previous_user_features = None
+            previous_pois = []
+            previous_plan = {}
 
         # 2. 添加用户消息（如果有内容）
         if request.message:
             messages.append(HumanMessage(content=request.message))
 
-        # 3. 调用 LangGraph 工作流（传入完整状态）
+        # 3. 调用 LangGraph 工作流（传入完整状态，包括之前的 user_features）
         state: dict[str, Any] = {
             "messages": messages,
             "optional_asked": optional_asked,
         }
+        # 传入之前的 user_features，供 collector 节点合并使用
+        if previous_user_features:
+            state["previous_user_features"] = previous_user_features
+        # 传入之前的 POIs 和 Plan，供继续对话时使用（避免重新搜索）
+        if previous_pois:
+            state["previous_pois"] = previous_pois
+        if previous_plan:
+            state["previous_plan"] = previous_plan
+
         result = crag_graph.invoke(state)
 
         # 4. 提取 AI 回复
@@ -370,19 +400,48 @@ def _invoke_chat_workflow(request: ChatRequest) -> dict[str, Any]:
         session_state = load_session_state(request.session_id)
         messages = session_state["messages"]
         optional_asked = session_state["optional_asked"]
+        previous_user_features = session_state.get("user_features")
+
+        # 获取完整会话数据（包括 POIs 和 Plan，用于继续对话）
+        full_session_data = get_full_session_data(request.session_id)
+        ob_pois = full_session_data.get("recommended_pois", []) if full_session_data else []
+        previous_plan = full_session_data.get("suggested_plan", {}) if full_session_data else {}
+
+        # 同步 Java 端的 pinned POIs（用户可能在 Java 前端修改了兴趣列表）
+        java_pinned_pois = fetch_pinned_pois_from_java(request.session_id)
+
+        # 优先使用 Java 端的 pinned POIs（用户主动保存的），否则使用 OceanBase 缓存
+        if java_pinned_pois:
+            logger.info(f"[SSE] Using {len(java_pinned_pois)} pinned POIs from Java backend")
+            previous_pois = java_pinned_pois
+        else:
+            logger.debug("[SSE] No Java pinned POIs, using OceanBase previous_pois")
+            previous_pois = ob_pois
     else:
         messages = []
         optional_asked = False
+        previous_user_features = None
+        previous_pois = []
+        previous_plan = {}
 
     # 2. 添加用户消息
     if request.message:
         messages.append(HumanMessage(content=request.message))
 
-    # 3. 调用 LangGraph 工作流
+    # 3. 调用 LangGraph 工作流（传入完整状态，包括之前的 user_features）
     state: dict[str, Any] = {
         "messages": messages,
         "optional_asked": optional_asked,
     }
+    # 传入之前的 user_features，供 collector 节点合并使用
+    if previous_user_features:
+        state["previous_user_features"] = previous_user_features
+    # 传入之前的 POIs 和 Plan，供继续对话时使用（避免重新搜索）
+    if previous_pois:
+        state["previous_pois"] = previous_pois
+    if previous_plan:
+        state["previous_plan"] = previous_plan
+
     result = crag_graph.invoke(state)
 
     # 4. 提取 AI 回复

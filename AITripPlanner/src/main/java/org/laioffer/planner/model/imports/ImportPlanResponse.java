@@ -33,6 +33,16 @@ public class ImportPlanResponse {
         return response;
     }
 
+    public static ImportPlanResponse updated(UUID itineraryId, int importedPoisCount, int planVersion) {
+        return new ImportPlanResponse(itineraryId, "updated", importedPoisCount, planVersion);
+    }
+
+    public static ImportPlanResponse updatedWithWarnings(UUID itineraryId, int importedPoisCount, int planVersion, List<String> warnings) {
+        ImportPlanResponse response = new ImportPlanResponse(itineraryId, "updated_with_warnings", importedPoisCount, planVersion);
+        response.setWarnings(warnings);
+        return response;
+    }
+
     // Getters and Setters
     public UUID getItineraryId() {
         return itineraryId;

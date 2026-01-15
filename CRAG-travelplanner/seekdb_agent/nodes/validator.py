@@ -98,6 +98,46 @@ def _user_mentioned_days(messages: list[Any]) -> bool:
     return False
 
 
+def _user_mentioned_pois_per_day(messages: list[Any]) -> bool:
+    """
+    检测用户输入中是否明确提到了每天景点数量
+
+    匹配模式：
+    - "3 POIs per day", "3-4 POIs", "3 attractions"
+    - "3个景点", "每天3个", "3-4个景点"
+    - 数字 + POI/attraction/spot/place/景点
+
+    Args:
+        messages: 消息列表
+
+    Returns:
+        bool: True 表示用户明确提到了每天景点数
+    """
+    patterns = [
+        r"\d+\s*[-]?\s*\d*\s*pois?\b",  # "3 POIs", "3-4 POIs", "3POIs"
+        r"\d+\s*[-]?\s*\d*\s*attractions?\b",  # "3 attractions", "3-4 attractions"
+        r"\d+\s*[-]?\s*\d*\s*spots?\b",  # "3 spots"
+        r"\d+\s*[-]?\s*\d*\s*places?\b",  # "3 places per day"
+        r"\d+\s*[-]?\s*\d*\s*个\s*景点",  # "3个景点", "3-4个景点"
+        r"每天\s*\d+",  # "每天3个"
+        r"\d+\s*per\s*day",  # "3 per day"
+    ]
+
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            content = str(msg.content).lower()
+        elif isinstance(msg, dict):
+            content = str(msg.get("content", "")).lower()
+        else:
+            continue
+
+        for pattern in patterns:
+            if re.search(pattern, content, re.IGNORECASE):
+                return True
+
+    return False
+
+
 def _is_field_missing(
     user_features: UserFeatures | dict[str, Any] | None,
     field: str,
@@ -203,9 +243,11 @@ def validator_node(state: CRAGState) -> dict[str, Any]:
     logger.info("[Validator] 开始验证特征完整性")
     logger.info("[Validator] 输入特征: %s", _get_features_dict(user_features))
 
-    # 检测用户是否明确提到了天数
+    # 检测用户是否明确提到了天数和每天景点数
     user_mentioned_days = _user_mentioned_days(messages)
+    user_mentioned_pois = _user_mentioned_pois_per_day(messages)
     logger.info("[Validator] 用户是否提到天数: %s", user_mentioned_days)
+    logger.info("[Validator] 用户是否提到每天景点数: %s", user_mentioned_pois)
 
     # 核心必填字段（6个）- 缺失会阻塞
     core_required_fields = [
@@ -228,10 +270,21 @@ def validator_node(state: CRAGState) -> dict[str, Any]:
 
     # 检查核心必填字段
     for field in core_required_fields:
-        if _is_field_missing(user_features, field):
+        # 特殊处理：如果用户明确提到，跳过可疑值检测
+        if field == "pois_per_day" and user_mentioned_pois:
+            # 用户明确提到了每天景点数，不检测可疑值
+            if _is_field_missing(user_features, field, check_suspicious=False):
+                core_missing.append(field)
+                missing.append(field)
+        elif field == "travel_days" and user_mentioned_days:
+            # 用户明确提到了天数，不检测可疑值
+            if _is_field_missing(user_features, field, check_suspicious=False):
+                core_missing.append(field)
+                missing.append(field)
+        elif _is_field_missing(user_features, field):
             core_missing.append(field)
             missing.append(field)
-        # 特殊处理 travel_days：如果用户没提到天数，检测可疑值
+        # 特殊处理 travel_days：如果用户没提到天数，额外检测可疑值
         elif field == "travel_days" and not user_mentioned_days:
             features_dict = _get_features_dict(user_features)
             value = features_dict.get("travel_days")

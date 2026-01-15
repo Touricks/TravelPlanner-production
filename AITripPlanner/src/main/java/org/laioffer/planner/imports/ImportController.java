@@ -54,22 +54,31 @@ public class ImportController {
         logger.info("Import plan request from user: {}, CRAG session: {}",
                 userEmail, request.getCragSessionId());
 
-        // Optional: Check for duplicate import (idempotency)
-        if (request.getCragSessionId() != null &&
-                importService.isAlreadyImported(userId, request.getCragSessionId())) {
-            logger.warn("Plan from CRAG session {} already imported for user {}",
-                    request.getCragSessionId(), userEmail);
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(new ImportPlanResponse(null, "already_imported", 0, 0));
-        }
-
         try {
-            ImportPlanResponse response = importService.importPlan(userId, request);
+            // Check for existing import (for upsert)
+            boolean isUpdate = request.getCragSessionId() != null &&
+                    importService.isAlreadyImported(userId, request.getCragSessionId());
 
-            logger.info("Plan imported successfully. Itinerary: {}, POIs: {}",
+            ImportPlanResponse response;
+            HttpStatus status;
+
+            if (isUpdate) {
+                // UPDATE existing itinerary
+                logger.info("Updating existing plan for CRAG session {} for user {}",
+                        request.getCragSessionId(), userEmail);
+                response = importService.updatePlan(userId, request);
+                status = HttpStatus.OK;
+            } else {
+                // CREATE new itinerary
+                response = importService.importPlan(userId, request);
+                status = HttpStatus.CREATED;
+            }
+
+            logger.info("Plan {} successfully. Itinerary: {}, POIs: {}",
+                    isUpdate ? "updated" : "imported",
                     response.getItineraryId(), response.getImportedPoisCount());
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            return ResponseEntity.status(status).body(response);
 
         } catch (IllegalArgumentException e) {
             logger.error("Invalid import request: {}", e.getMessage());
@@ -77,7 +86,7 @@ public class ImportController {
                     .body(new ImportPlanResponse(null, "error: " + e.getMessage(), 0, 0));
 
         } catch (Exception e) {
-            logger.error("Failed to import plan: {}", e.getMessage(), e);
+            logger.error("Failed to import/update plan: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ImportPlanResponse(null, "error: " + e.getMessage(), 0, 0));
         }

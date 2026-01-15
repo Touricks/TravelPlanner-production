@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Box, Typography, Button, CircularProgress, Alert, Paper } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import UndoIcon from '@mui/icons-material/Undo';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import ChatMessage from './ChatMessage';
@@ -9,7 +10,7 @@ import ChatInput from './ChatInput';
 import POICarousel from './POICarousel';
 import PlanPreview from './PlanPreview';
 import ProgressSteps from './ProgressSteps';
-import { sendChatMessage, saveSession, getSSEChatUrl } from '../../api/crag';
+import { sendChatMessage, saveSession, getSSEChatUrl, getItineraryBySession } from '../../api/crag';
 import { useAuth } from '../../auth/AuthContext';
 import useSSE from '../../hooks/useSSE';
 
@@ -173,6 +174,26 @@ export default function ChatContainer() {
     initSession();
   };
 
+  // Abandon current plan and return to the last saved plan
+  const handleAbandon = async () => {
+    if (!restoreSessionId) return;
+
+    setIsLoading(true);
+    try {
+      const result = await getItineraryBySession(restoreSessionId);
+      if (result?.itinerary_id) {
+        navigate(`/plan/${result.itinerary_id}`);
+      } else {
+        setError('Could not find the original plan. Please try "Start Over" instead.');
+      }
+    } catch (err) {
+      setError('Failed to return to the saved plan.');
+      console.error('Abandon error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -236,21 +257,32 @@ export default function ChatContainer() {
 
         {/* Action Buttons */}
         {planReady && (
-          <Box sx={{ display: 'flex', gap: 2, px: 2, py: 2, justifyContent: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 2, px: 2, py: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button
               variant="contained"
               startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isLoading}
               sx={{ minWidth: 150 }}
             >
-              {isSaving ? 'Saving...' : 'Save Itinerary'}
+              {isSaving ? 'Saving...' : 'Save and View'}
             </Button>
+            {restoreSessionId && (
+              <Button
+                variant="outlined"
+                color="warning"
+                startIcon={<UndoIcon />}
+                onClick={handleAbandon}
+                disabled={isSaving || isLoading}
+              >
+                Abandon this plan
+              </Button>
+            )}
             <Button
               variant="outlined"
               startIcon={<RefreshIcon />}
               onClick={handleReset}
-              disabled={isSaving}
+              disabled={isSaving || isLoading}
             >
               Start Over
             </Button>

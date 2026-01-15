@@ -106,6 +106,131 @@ public class ImportServiceImpl implements ImportService {
         return itineraryRepository.existsByCragSessionId(cragSessionId);
     }
 
+    @Override
+    @Transactional
+    public ImportPlanResponse updatePlan(Long userId, ImportPlanRequest request) {
+        String cragSessionId = request.getCragSessionId();
+        logger.info("Updating plan for user {} with CRAG session {}", userId, cragSessionId);
+
+        List<String> warnings = new ArrayList<>();
+
+        // 1. Find existing itinerary
+        ItineraryEntity itinerary = itineraryRepository.findByCragSessionIdAndUserId(cragSessionId, userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Itinerary not found for cragSessionId: " + cragSessionId));
+
+        // 2. Update itinerary metadata
+        updateItineraryMetadata(itinerary, request.getUserFeatures(), request.getPlan());
+        itinerary = itineraryRepository.save(itinerary);
+        logger.info("Updated itinerary {} metadata", itinerary.getId());
+
+        // 3. IMPORTANT: Do NOT modify itinerary_places
+        // User's pinned POI list should be preserved when continuing a conversation.
+        // We only update the plan (schedule), not the interest list.
+        logger.info("Preserving existing itinerary_places (pinned POIs) for itinerary {}", itinerary.getId());
+
+        // 4. Build existing place map from current itinerary_places
+        // This allows the plan to reference places the user has already saved
+        Map<String, PlaceEntity> existingPoiMap = buildExistingPoiMap(itinerary.getId());
+        logger.info("Found {} existing places in itinerary", existingPoiMap.size());
+
+        // 5. Build and save new plan using existing places where available
+        PlanItineraryResponse planResponse = buildPlanResponse(
+                itinerary.getId(), request.getPlan(), existingPoiMap);
+        int planVersion = savePlan(itinerary, planResponse);
+
+        // Count how many stops have valid place references
+        int existingPoiCount = (int) itineraryPlaceRepository.countByItineraryId(itinerary.getId());
+
+        logger.info("Plan update completed. Itinerary: {}, Existing POIs: {}, Version: {}",
+                itinerary.getId(), existingPoiCount, planVersion);
+
+        if (warnings.isEmpty()) {
+            return ImportPlanResponse.updated(itinerary.getId(), existingPoiCount, planVersion);
+        } else {
+            return ImportPlanResponse.updatedWithWarnings(itinerary.getId(), existingPoiCount, planVersion, warnings);
+        }
+    }
+
+    /**
+     * Build a map of existing places linked to the itinerary.
+     * Used during plan updates to reference places without modifying itinerary_places.
+     */
+    private Map<String, PlaceEntity> buildExistingPoiMap(UUID itineraryId) {
+        Map<String, PlaceEntity> poiMap = new HashMap<>();
+
+        List<ItineraryPlaceEntity> itineraryPlaces = itineraryPlaceRepository.findAllByItineraryId(itineraryId);
+        for (ItineraryPlaceEntity ip : itineraryPlaces) {
+            PlaceEntity place = ip.getPlace();
+            if (place != null) {
+                // Map by place ID (as string)
+                poiMap.put(place.getId().toString(), place);
+                // Also map by google place ID if available
+                if (place.getGooglePlaceId() != null) {
+                    poiMap.put(place.getGooglePlaceId(), place);
+                }
+            }
+        }
+
+        return poiMap;
+    }
+
+    /**
+     * Update itinerary metadata from user features and plan data.
+     */
+    private void updateItineraryMetadata(ItineraryEntity itinerary,
+                                          ImportedUserFeatures features,
+                                          ImportedPlan plan) {
+        // Update destination
+        itinerary.setDestinationCity(features.getDestination());
+
+        // Update dates
+        OffsetDateTime startDate = parseDateTime(plan.getStartDate());
+        OffsetDateTime endDate = parseDateTime(plan.getEndDate());
+        itinerary.setStartDate(startDate);
+        itinerary.setEndDate(endDate);
+
+        // Update budget
+        itinerary.setBudgetInCents(features.getBudgetCents() != null ? features.getBudgetCents() : 0);
+
+        // Update travel pace
+        if (features.getTravelPace() != null) {
+            try {
+                itinerary.setTravelPace(TravelPace.valueOf(features.getTravelPace().toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                itinerary.setTravelPace(TravelPace.MODERATE);
+            }
+        }
+
+        // Update travel mode
+        if (features.getTravelMode() != null) {
+            try {
+                itinerary.setTravelMode(TravelMode.valueOf(features.getTravelMode().toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                itinerary.setTravelMode(TravelMode.WALKING);
+            }
+        }
+
+        // Update preferences
+        itinerary.setNumberOfTravelers(features.getNumberOfTravelers());
+        itinerary.setHasChildren(features.getHasChildren());
+        itinerary.setHasElderly(features.getHasElderly());
+
+        // Update categories
+        if (features.getInterests() != null) {
+            itinerary.setPreferredCategories(features.getInterests());
+        }
+
+        // Update AI metadata
+        Map<String, Object> aiMetadata = itinerary.getAiMetadata();
+        if (aiMetadata == null) {
+            aiMetadata = new HashMap<>();
+        }
+        aiMetadata.put("last_update_time", LocalDateTime.now().toString());
+        aiMetadata.put("update_source", "crag");
+        itinerary.setAiMetadata(aiMetadata);
+    }
+
     /**
      * Create an ItineraryEntity from user features and plan data.
      */

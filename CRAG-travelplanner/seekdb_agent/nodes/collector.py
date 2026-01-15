@@ -84,6 +84,52 @@ def _extract_features_with_retry(messages: list[Any]) -> UserFeatures:
     return UserFeatures(**result.model_dump())
 
 
+def _merge_user_features(
+    previous: dict[str, Any] | None,
+    current: UserFeatures,
+) -> UserFeatures:
+    """
+    合并之前的用户特征和当前提取的特征
+
+    策略：当前提取的非空值优先；如果当前值为空，则保留之前的值
+
+    Args:
+        previous: 之前保存的用户特征字典（可能为 None）
+        current: 当前 LLM 提取的用户特征
+
+    Returns:
+        合并后的 UserFeatures
+    """
+    if not previous:
+        return current
+
+    # 转换 current 为 dict
+    current_dict = current.model_dump()
+
+    # 合并逻辑：遍历所有字段
+    merged = {}
+    for key in current_dict:
+        current_value = current_dict[key]
+        previous_value = previous.get(key)
+
+        # 判断当前值是否为"空"
+        # - None 视为空
+        # - 空列表 [] 视为空
+        # - 空字符串 "" 视为空
+        is_current_empty = current_value is None or current_value == [] or current_value == ""
+
+        if is_current_empty and previous_value is not None:
+            # 当前值为空但之前有值，保留之前的值
+            merged[key] = previous_value
+            logger.debug(f"[Collector] 保留之前的 {key}: {previous_value}")
+        else:
+            # 使用当前值（可能为空或非空）
+            merged[key] = current_value
+
+    logger.info(f"[Collector] 特征合并完成，destination={merged.get('destination')}")
+    return UserFeatures(**merged)
+
+
 def collector_node(state: CRAGState) -> dict[str, Any]:
     """
     Collector节点：从用户消息中提取结构化特征
@@ -95,21 +141,29 @@ def collector_node(state: CRAGState) -> dict[str, Any]:
 
     输入（从state读取）：
         - messages: list[BaseMessage]  # 用户对话历史（自动类型）
+        - previous_user_features: dict | None  # 之前保存的用户特征（多轮对话）
 
     输出（更新到state）：
-        - user_features: 提取的结构化用户特征
+        - user_features: 提取的结构化用户特征（与之前的特征合并）
 
     工作流程：
         1. 构建包含COLLECTOR_PROMPT的消息列表
         2. 调用LLM进行特征提取（使用structured output）
-        3. 返回提取的UserFeatures
+        3. 与之前的特征合并（保留非空值）
+        4. 返回合并后的UserFeatures
 
     异常处理：
         - 使用 tenacity 进行重试（最多3次）
-        - 如果所有重试失败，返回默认空特征
+        - 如果所有重试失败，尝试使用之前的特征或返回默认空特征
     """
     # 发射进度
     emit_progress("collector", "Understanding your travel preferences...", 10)
+
+    # 获取之前的用户特征（多轮对话场景）
+    previous_user_features = state.get("previous_user_features")
+    if previous_user_features:
+        logger.info("[Collector] 发现之前的用户特征，将进行合并")
+        logger.info("[Collector] 之前的 destination: %s", previous_user_features.get("destination"))
 
     # 记录输入消息
     input_messages = state.get("messages", [])
@@ -135,14 +189,25 @@ def collector_node(state: CRAGState) -> dict[str, Any]:
 
     # 2. 调用LLM提取特征（带重试）
     try:
-        user_features = _extract_features_with_retry(messages)
-        logger.info("[Collector] 特征提取成功")
-        logger.info("[Collector] 提取结果: %s", user_features.model_dump())
+        extracted_features = _extract_features_with_retry(messages)
+        logger.info("[Collector] LLM 特征提取成功")
+        logger.info("[Collector] LLM 提取结果: %s", extracted_features.model_dump())
+
+        # 3. 与之前的特征合并
+        user_features = _merge_user_features(previous_user_features, extracted_features)
+        logger.info("[Collector] 合并后结果: %s", user_features.model_dump())
+
         emit_progress("collector", "Preferences collected", 15)
     except Exception as e:
-        # 重试全部失败，返回默认空特征
+        # 重试全部失败
         logger.error("[Collector] 特征提取失败: %s", e)
-        user_features = UserFeatures()
 
-    # 3. 返回更新的状态
+        # 尝试使用之前的特征作为后备
+        if previous_user_features:
+            logger.warning("[Collector] 使用之前保存的特征作为后备")
+            user_features = UserFeatures(**previous_user_features)
+        else:
+            user_features = UserFeatures()
+
+    # 4. 返回更新的状态
     return {"user_features": user_features}
