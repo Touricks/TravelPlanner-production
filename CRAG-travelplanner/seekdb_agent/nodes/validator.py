@@ -6,22 +6,58 @@ Validator Node - 特征验证节点
 增强功能：
 - 检测 LLM 可能脑补的"可疑默认值"
 - 将可疑值视为缺失，要求用户确认
+- LLM 辅助验证：当正则无法识别时，使用 LLM 判断用户是否确认了字段值
 
 更新记录：
 - 2026-01-09: 适配 Pydantic UserFeatures，使用 model_dump() 替代 dict()
+- 2026-01-22: 添加 LLM 辅助验证，解决简短回复无法识别的问题
 """
 
 import logging
+import os
 import re
+from functools import lru_cache
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
+from seekdb_agent.llm import create_llm
+from seekdb_agent.prompts.validator import FIELD_VALIDATION_PROMPT
 from seekdb_agent.state import CRAGState, UserFeatures
 from seekdb_agent.utils.progress import emit_progress
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+# ==================== LLM 辅助验证配置 ====================
+
+# 环境变量开关：是否启用 LLM 辅助验证（默认启用）
+LLM_VALIDATION_ENABLED = os.getenv("LLM_VALIDATION_ENABLED", "true").lower() == "true"
+
+
+class FieldMentionValidation(BaseModel):
+    """LLM 字段确认验证结果"""
+
+    user_confirmed: bool = Field(description="用户是否确认了该字段值")
+    confidence: str = Field(default="high", description="置信度: high/medium/low")
+    reasoning: str = Field(default="", description="判断理由")
+
+
+# 字段描述映射（用于 LLM 理解字段含义）
+FIELD_DESCRIPTIONS: dict[str, str] = {
+    "pois_per_day": "Number of attractions/POIs to visit per day (integer)",
+    "travel_days": "Total trip duration in days (integer)",
+    "budget_meal": "Meal budget level or amount (e.g., 'medium', 50)",
+    "transportation": "Preferred transportation method (e.g., 'public transit', 'driving')",
+    "interests": "List of travel interests (e.g., ['history', 'food'])",
+    "destination": "Travel destination city/location",
+    "must_visit": "Specific places the user must visit",
+    "dietary_options": "Dietary preferences or restrictions",
+    "price_preference": "Overall price/budget preference level",
+}
+
 
 # LLM 常见的"脑补"默认值（需要用户确认）
 # 注意：travel_days 需要特殊处理，因为用户可能真的说了具体天数
@@ -106,6 +142,7 @@ def _user_mentioned_pois_per_day(messages: list[Any]) -> bool:
     - "3 POIs per day", "3-4 POIs", "3 attractions"
     - "3个景点", "每天3个", "3-4个景点"
     - 数字 + POI/attraction/spot/place/景点
+    - 简短回复 "3-4" 或 "3" 作为对 POI 数量问题的回答
 
     Args:
         messages: 消息列表
@@ -113,7 +150,8 @@ def _user_mentioned_pois_per_day(messages: list[Any]) -> bool:
     Returns:
         bool: True 表示用户明确提到了每天景点数
     """
-    patterns = [
+    # 明确的 POI 数量模式
+    explicit_patterns = [
         r"\d+\s*[-]?\s*\d*\s*pois?\b",  # "3 POIs", "3-4 POIs", "3POIs"
         r"\d+\s*[-]?\s*\d*\s*attractions?\b",  # "3 attractions", "3-4 attractions"
         r"\d+\s*[-]?\s*\d*\s*spots?\b",  # "3 spots"
@@ -123,6 +161,9 @@ def _user_mentioned_pois_per_day(messages: list[Any]) -> bool:
         r"\d+\s*per\s*day",  # "3 per day"
     ]
 
+    # 简短数字回复模式（如 "3-4" 或 "3"）
+    short_number_pattern = r"^\s*\d+\s*[-–—]?\s*\d*\s*[;,]?"
+
     for msg in messages:
         if isinstance(msg, HumanMessage):
             content = str(msg.content).lower()
@@ -131,11 +172,194 @@ def _user_mentioned_pois_per_day(messages: list[Any]) -> bool:
         else:
             continue
 
-        for pattern in patterns:
+        # 检查明确模式
+        for pattern in explicit_patterns:
             if re.search(pattern, content, re.IGNORECASE):
                 return True
 
+        # 检查简短数字回复（通常是对 "每天几个景点" 问题的回答）
+        # 只有当消息以数字开头时才匹配（避免误匹配）
+        if re.match(short_number_pattern, content):
+            # 确保这是一个简短回复（不是长句子）
+            # 如 "3-4; No must-see" 或 "3-4"
+            if len(content) < 30:
+                logger.debug("[Validator] 检测到简短数字回复作为 pois_per_day: %s", content)
+                return True
+
     return False
+
+
+# ==================== LLM 辅助验证函数 ====================
+
+
+def _format_conversation_context(messages: list[Any], last_n: int = 4) -> str:
+    """
+    格式化对话上下文用于 LLM 验证
+
+    Args:
+        messages: 消息列表
+        last_n: 只取最后 N 条消息（默认 4 条）
+
+    Returns:
+        格式化的对话字符串
+    """
+    recent_messages = messages[-last_n:] if len(messages) > last_n else messages
+    formatted = []
+
+    for msg in recent_messages:
+        # 判断消息类型
+        if isinstance(msg, HumanMessage):
+            role = "User"
+            content = str(msg.content)
+        elif isinstance(msg, AIMessage):
+            role = "AI"
+            content = str(msg.content)
+        elif isinstance(msg, dict):
+            role = msg.get("role", "unknown").capitalize()
+            if role == "Assistant":
+                role = "AI"
+            content = str(msg.get("content", ""))
+        else:
+            continue
+
+        # 截断过长的消息
+        if len(content) > 500:
+            content = content[:500] + "..."
+
+        formatted.append(f"{role}: {content}")
+
+    return "\n".join(formatted)
+
+
+@lru_cache(maxsize=1)
+def _get_validation_llm() -> BaseChatModel:
+    """
+    获取用于字段验证的 LLM 实例（带缓存）
+
+    使用低 temperature 确保一致性
+    """
+    return create_llm(temperature=0.0)
+
+
+def _llm_validate_field_mention(
+    messages: list[Any],
+    field_name: str,
+    field_value: Any,
+) -> bool:
+    """
+    使用 LLM 验证用户是否确认了字段值
+
+    Args:
+        messages: 对话消息列表
+        field_name: 字段名称
+        field_value: 字段当前值
+
+    Returns:
+        bool: True 表示用户确认了该值，False 表示未确认
+    """
+    if not LLM_VALIDATION_ENABLED:
+        logger.debug("[Validator] LLM 验证已禁用，跳过")
+        return False
+
+    try:
+        # 格式化对话上下文
+        conversation_context = _format_conversation_context(messages)
+
+        # 获取字段描述
+        field_description = FIELD_DESCRIPTIONS.get(field_name, f"Field '{field_name}' value")
+
+        # 构建 prompt
+        prompt = FIELD_VALIDATION_PROMPT.format(
+            field_name=field_name,
+            field_value=field_value,
+            field_description=field_description,
+            conversation_context=conversation_context,
+        )
+
+        # 调用 LLM
+        llm = _get_validation_llm()
+        structured_llm = llm.with_structured_output(FieldMentionValidation)
+
+        messages_to_llm = [SystemMessage(content=prompt)]
+        result = structured_llm.invoke(messages_to_llm)
+
+        if result is None:
+            logger.warning("[Validator] LLM 验证返回 None")
+            return False
+
+        # 处理返回结果
+        user_confirmed: bool = False
+        confidence: str = "unknown"
+        reasoning: str = ""
+
+        if isinstance(result, dict):
+            user_confirmed = bool(result.get("user_confirmed", False))
+            confidence = str(result.get("confidence", "unknown"))
+            reasoning = str(result.get("reasoning", ""))
+        elif isinstance(result, FieldMentionValidation):
+            user_confirmed = result.user_confirmed
+            confidence = result.confidence
+            reasoning = result.reasoning
+        elif hasattr(result, "user_confirmed"):
+            # Gemini 可能返回其他 BaseModel 类型
+            user_confirmed = bool(getattr(result, "user_confirmed", False))
+            confidence = str(getattr(result, "confidence", "unknown"))
+            reasoning = str(getattr(result, "reasoning", ""))
+
+        logger.info(
+            "[Validator] LLM 验证 %s=%s: confirmed=%s (confidence=%s, reason=%s)",
+            field_name,
+            field_value,
+            user_confirmed,
+            confidence,
+            reasoning,
+        )
+
+        return user_confirmed
+
+    except Exception as e:
+        logger.warning("[Validator] LLM 验证失败: %s，回退到保守策略", e)
+        # 出错时保守处理：视为未确认
+        return False
+
+
+def _is_suspicious_value_confirmed(
+    messages: list[Any],
+    field_name: str,
+    field_value: Any,
+) -> bool:
+    """
+    组合验证：检查可疑值是否被用户确认
+
+    验证流程：
+    1. 先用正则检测用户是否明确提到了该字段
+    2. 如果正则未匹配，使用 LLM 进行验证
+
+    Args:
+        messages: 对话消息列表
+        field_name: 字段名称
+        field_value: 字段当前值
+
+    Returns:
+        bool: True 表示用户确认了该值，False 表示未确认
+    """
+    # Step 1: 正则检测
+    if field_name == "pois_per_day":
+        if _user_mentioned_pois_per_day(messages):
+            logger.debug("[Validator] %s 通过正则验证确认", field_name)
+            return True
+    elif field_name == "travel_days":
+        if _user_mentioned_days(messages):
+            logger.debug("[Validator] %s 通过正则验证确认", field_name)
+            return True
+
+    # Step 2: 正则未匹配，尝试 LLM 验证
+    logger.info(
+        "[Validator] %s=%s 正则未匹配，尝试 LLM 验证",
+        field_name,
+        field_value,
+    )
+    return _llm_validate_field_mention(messages, field_name, field_value)
 
 
 def _is_field_missing(
@@ -242,12 +466,7 @@ def validator_node(state: CRAGState) -> dict[str, Any]:
     messages = state.get("messages", [])
     logger.info("[Validator] 开始验证特征完整性")
     logger.info("[Validator] 输入特征: %s", _get_features_dict(user_features))
-
-    # 检测用户是否明确提到了天数和每天景点数
-    user_mentioned_days = _user_mentioned_days(messages)
-    user_mentioned_pois = _user_mentioned_pois_per_day(messages)
-    logger.info("[Validator] 用户是否提到天数: %s", user_mentioned_days)
-    logger.info("[Validator] 用户是否提到每天景点数: %s", user_mentioned_pois)
+    logger.info("[Validator] LLM 辅助验证: %s", "启用" if LLM_VALIDATION_ENABLED else "禁用")
 
     # 核心必填字段（6个）- 缺失会阻塞
     core_required_fields = [
@@ -267,30 +486,46 @@ def validator_node(state: CRAGState) -> dict[str, Any]:
 
     missing = []
     core_missing = []
+    features_dict = _get_features_dict(user_features)
 
     # 检查核心必填字段
     for field in core_required_fields:
-        # 特殊处理：如果用户明确提到，跳过可疑值检测
-        if field == "pois_per_day" and user_mentioned_pois:
-            # 用户明确提到了每天景点数，不检测可疑值
-            if _is_field_missing(user_features, field, check_suspicious=False):
-                core_missing.append(field)
-                missing.append(field)
-        elif field == "travel_days" and user_mentioned_days:
-            # 用户明确提到了天数，不检测可疑值
-            if _is_field_missing(user_features, field, check_suspicious=False):
-                core_missing.append(field)
-                missing.append(field)
-        elif _is_field_missing(user_features, field):
+        value = features_dict.get(field)
+
+        # Step 1: 基础缺失检查（不检测可疑值）
+        if _is_field_missing(user_features, field, check_suspicious=False):
             core_missing.append(field)
             missing.append(field)
-        # 特殊处理 travel_days：如果用户没提到天数，额外检测可疑值
-        elif field == "travel_days" and not user_mentioned_days:
-            features_dict = _get_features_dict(user_features)
-            value = features_dict.get("travel_days")
-            if value in SUSPICIOUS_TRAVEL_DAYS:
+            continue
+
+        # Step 2: 可疑值检查 + LLM 验证
+        # 检查是否在 SUSPICIOUS_DEFAULTS 中
+        is_suspicious = False
+        if field in SUSPICIOUS_DEFAULTS:
+            if field in ["travel_days", "pois_per_day"]:
+                # 整数字段：直接比较
+                is_suspicious = value in SUSPICIOUS_DEFAULTS[field]
+            else:
+                # 字符串字段：转小写比较
+                value_lower = str(value).lower().strip()
+                suspicious_values = [str(v).lower() for v in SUSPICIOUS_DEFAULTS[field]]
+                is_suspicious = value_lower in suspicious_values
+
+        # travel_days 特殊处理：额外检查 SUSPICIOUS_TRAVEL_DAYS
+        if field == "travel_days" and value in SUSPICIOUS_TRAVEL_DAYS:
+            is_suspicious = True
+
+        # 如果值可疑，使用组合验证（正则 + LLM）
+        if is_suspicious:
+            logger.info(
+                "[Validator] 检测到可疑值 %s=%s，进行组合验证",
+                field,
+                value,
+            )
+            if not _is_suspicious_value_confirmed(messages, field, value):
                 logger.warning(
-                    "[Validator] 检测到可疑 travel_days=%s (用户未提到天数，可能是 LLM 脑补)",
+                    "[Validator] 可疑值 %s=%s 未被用户确认，标记为缺失",
+                    field,
                     value,
                 )
                 core_missing.append(field)

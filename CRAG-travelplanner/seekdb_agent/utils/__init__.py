@@ -9,6 +9,9 @@ from seekdb_agent.utils.geocoding import (
     enrich_pois_sync,
     enrich_pois_with_coordinates,
     geocode_place,
+    search_poi_by_name,
+    search_pois_by_names,
+    search_pois_sync,
 )
 from seekdb_agent.utils.progress import (
     emit_progress,
@@ -26,4 +29,8 @@ __all__ = [
     "enrich_poi_with_coordinates",
     "enrich_pois_with_coordinates",
     "enrich_pois_sync",
+    # POI search utilities
+    "search_poi_by_name",
+    "search_pois_by_names",
+    "search_pois_sync",
 ]

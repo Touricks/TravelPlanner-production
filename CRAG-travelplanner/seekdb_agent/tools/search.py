@@ -199,14 +199,14 @@ def search_pois(query: str, search_mode: str = "balanced") -> str:
         except Exception as e:
             search_logger.warning(f"Failed to create UserFeatures: {e}")
 
-    # 执行 Hybrid Search（禁用 rerank 以减少延迟，OceanBase AI_RERANK 模型未配置）
+    # 执行 Hybrid Search + Jina Reranker
     results = hybrid_search(
         store=store,
         query=query,
         user_features=user_features,  # 传递用户特征（用于目的地过滤）
         search_mode=search_mode,  # type: ignore[arg-type]
         top_k=top_k,
-        use_rerank=False,  # 暂时禁用 rerank
+        use_rerank=True,  # 启用 Jina Reranker
     )
 
     # DEBUG: 日志输出搜索结果

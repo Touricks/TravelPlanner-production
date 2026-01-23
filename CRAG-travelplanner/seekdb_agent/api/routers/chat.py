@@ -143,7 +143,7 @@ def _build_recovery_response(session_id: str, session_state: dict[str, Any]) -> 
 
     return ChatResponse(
         session_id=session_id,
-        message=f"[会话已恢复] {last_message}",
+        message=f"[Recovered] {last_message}",
         user_features=user_features,
         feature_complete=feature_complete,
         plan_ready=full_data.get("plan_ready", False),

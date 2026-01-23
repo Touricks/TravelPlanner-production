@@ -13,6 +13,7 @@ Generator Node
 """
 
 import logging
+import re
 import sys
 from collections.abc import Sequence
 from datetime import datetime, timedelta
@@ -26,7 +27,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from seekdb_agent.llm import create_fallback_llm, create_llm
 from seekdb_agent.prompts.generator import GENERATOR_PROMPT
 from seekdb_agent.state import CRAGState, POIResult, UserFeatures
-from seekdb_agent.utils.geocoding import enrich_pois_sync
+from seekdb_agent.utils.geocoding import enrich_pois_sync, search_pois_sync
 from seekdb_agent.utils.progress import emit_progress
 
 # 配置日志输出到 stderr（确保立即显示）
@@ -91,6 +92,105 @@ class GeneratorOutput(BaseModel):
 def _get_llm() -> BaseChatModel:
     """获取 LLM 实例"""
     return create_llm(temperature=0.7)
+
+
+def _extract_poi_names_from_text(message: str) -> list[str]:
+    """
+    Extract POI names from LLM-generated text message.
+    Uses regex patterns to find attraction names.
+
+    Args:
+        message: LLM-generated text message
+
+    Returns:
+        List of POI names found in text
+
+    Patterns matched:
+    - **POI Name** (markdown bold)
+    - 1. **POI Name** (numbered list)
+    """
+    poi_names: list[str] = []
+
+    # Pattern: Markdown bold (e.g., **Golden Gate Bridge**)
+    bold_pattern = r"\*\*([^*]+)\*\*"
+
+    matches = re.findall(bold_pattern, message)
+
+    # Filter out common non-POI bold text
+    non_poi_keywords = {
+        "day",
+        "practical tips",
+        "transportation",
+        "dining",
+        "notes",
+        "tips",
+        "rating",
+        "price",
+        "summary",
+        "overview",
+        "budget",
+        "schedule",
+        "itinerary",
+    }
+
+    for match in matches:
+        match_lower = match.lower().strip()
+        # Skip if it's a common header or non-POI text
+        if any(keyword in match_lower for keyword in non_poi_keywords):
+            continue
+        # Skip very short matches (likely not POI names)
+        if len(match.strip()) < 3:
+            continue
+        poi_names.append(match.strip())
+
+    # Deduplicate while preserving order
+    return list(dict.fromkeys(poi_names))
+
+
+def _find_missing_pois(
+    text_poi_names: list[str],
+    recommended_pois: list[dict[str, Any]],
+) -> list[str]:
+    """
+    Find POI names mentioned in text but not in recommended_pois.
+    Uses fuzzy matching to handle slight name variations.
+
+    Args:
+        text_poi_names: POI names extracted from text
+        recommended_pois: List of POI dicts from search results
+
+    Returns:
+        List of POI names that are missing from recommended_pois
+    """
+    if not text_poi_names or not recommended_pois:
+        return []
+
+    # Build set of existing POI names (lowercase for comparison)
+    existing_names = {
+        poi.get("name", "").lower().strip() for poi in recommended_pois if poi.get("name")
+    }
+
+    missing: list[str] = []
+    for name in text_poi_names:
+        name_lower = name.lower().strip()
+
+        # Check for exact match or substring match
+        is_found = False
+        for existing in existing_names:
+            # Exact match
+            if name_lower == existing:
+                is_found = True
+                break
+            # Substring match (either direction)
+            if len(name_lower) > 5 and len(existing) > 5:
+                if name_lower in existing or existing in name_lower:
+                    is_found = True
+                    break
+
+        if not is_found:
+            missing.append(name)
+
+    return missing
 
 
 def _format_search_results_for_structured(results: Sequence[POIResult | dict[str, Any]]) -> str:
@@ -734,6 +834,44 @@ def generator_node(state: CRAGState) -> dict[str, Any]:
 
     # 发射完成进度
     emit_progress("generator", "Itinerary complete", 95)
+
+    # Supplement visual plan with missing POIs from text
+    # This ensures POIs mentioned in text are also shown on the map
+    if response_content and search_results:
+        try:
+            # Convert search_results to list of dicts if needed
+            search_results_list: list[dict[str, Any]] = []
+            for poi in search_results:
+                if isinstance(poi, dict):
+                    search_results_list.append(poi)
+                elif hasattr(poi, "model_dump"):
+                    search_results_list.append(poi.model_dump())
+                else:
+                    search_results_list.append(dict(poi))  # type: ignore[arg-type]
+
+            text_poi_names = _extract_poi_names_from_text(response_content)
+            if text_poi_names:
+                logger.info(f"[Generator] Extracted POI names from text: {text_poi_names}")
+
+                missing_pois = _find_missing_pois(text_poi_names, search_results_list)
+                if missing_pois:
+                    logger.info(
+                        f"[Generator] Found {len(missing_pois)} POIs in text but not in visual plan: "
+                        f"{missing_pois}"
+                    )
+                    destination = user_features_dict.get("destination", "")
+
+                    # Search Google Places for missing POIs
+                    google_pois = search_pois_sync(missing_pois, destination)
+
+                    if google_pois:
+                        logger.info(
+                            f"[Generator] Supplemented {len(google_pois)} POIs from Google Places"
+                        )
+                        search_results_list.extend(google_pois)
+                        search_results = search_results_list  # type: ignore[assignment]
+        except Exception as e:
+            logger.warning(f"[Generator] Failed to supplement missing POIs: {e}")
 
     return {
         "final_response": response_content,

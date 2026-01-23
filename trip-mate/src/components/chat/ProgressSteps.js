@@ -12,8 +12,8 @@ const STAGES = [
   { key: 'validator', label: 'Validating', icon: <VerifiedIcon /> },
   { key: 'search', label: 'Searching', icon: <SearchIcon /> },
   { key: 'grading', label: 'Evaluating', icon: <CheckCircleIcon /> },
-  { key: 'fallback', label: 'AI Generating', icon: <SmartToyIcon /> },
-  { key: 'generator', label: 'Generating', icon: <ExploreIcon /> },
+  { key: 'fallback', label: 'Generating', icon: <SmartToyIcon /> },
+  { key: 'generator', label: 'Organizing Response', icon: <ExploreIcon /> },
 ];
 
 /**

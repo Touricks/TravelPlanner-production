@@ -9,6 +9,7 @@ from seekdb_agent.prompts.collector import COLLECTOR_PROMPT
 from seekdb_agent.prompts.evaluator import EVALUATOR_PROMPT
 from seekdb_agent.prompts.generator import GENERATOR_PROMPT
 from seekdb_agent.prompts.refiner import REFINER_PROMPT
+from seekdb_agent.prompts.validator import FIELD_VALIDATION_PROMPT
 
 __all__ = [
     "COLLECTOR_PROMPT",
@@ -16,4 +17,5 @@ __all__ = [
     "REFINER_PROMPT",
     "GENERATOR_PROMPT",
     "ASK_USER_PROMPT",
+    "FIELD_VALIDATION_PROMPT",
 ]

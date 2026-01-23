@@ -9,15 +9,14 @@ OceanBase Hybrid Search + AI Rerank 两阶段检索
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.documents import Document
-from langchain_oceanbase.ai_functions import OceanBaseAIFunctions
 from langchain_oceanbase.vectorstores import OceanbaseVectorStore
 
 from seekdb_agent.db.city_aliases import get_all_valid_cities, parse_destination
+from seekdb_agent.db.reranker import jina_rerank
 from seekdb_agent.db.sparse_encoder import TFIDFEncoder
 from seekdb_agent.state import POIResult, UserFeatures
 
@@ -25,9 +24,6 @@ logger = logging.getLogger(__name__)
 
 # 全局TF-IDF编码器（延迟加载）
 _tfidf_encoder: TFIDFEncoder | None = None
-
-# 全局AI Functions客户端（延迟加载）
-_ai_functions: OceanBaseAIFunctions | None = None
 
 # 搜索模式权重预设
 WEIGHT_PRESETS: dict[str, dict[str, float]] = {
@@ -90,29 +86,6 @@ def get_tfidf_encoder() -> TFIDFEncoder:
     return _tfidf_encoder
 
 
-def get_ai_functions() -> OceanBaseAIFunctions | None:
-    """
-    获取 AI Functions 客户端（延迟加载）
-
-    Returns:
-        OceanBaseAIFunctions 实例，如果配置错误返回 None
-    """
-    global _ai_functions
-
-    if _ai_functions is None:
-        from seekdb_agent.db.connection import get_oceanbase_connection_args
-
-        try:
-            connection_args = get_oceanbase_connection_args()
-            _ai_functions = OceanBaseAIFunctions(connection_args=connection_args)
-            logger.info("AI Functions 客户端初始化成功")
-        except Exception as e:
-            logger.warning(f"AI Functions 初始化失败，将跳过 rerank: {e}")
-            return None
-
-    return _ai_functions
-
-
 def rerank_results(
     query: str,
     documents: list[str],
@@ -120,7 +93,7 @@ def rerank_results(
     top_k: int = 10,
 ) -> list[dict[str, Any]]:
     """
-    使用 AI_RERANK 对搜索结果重排序
+    使用 Jina Reranker API 对搜索结果重排序
 
     Args:
         query: 查询文本
@@ -129,40 +102,21 @@ def rerank_results(
         top_k: 返回的结果数量
 
     Returns:
-        [{"document": str, "score": float, "rank": int}, ...]
+        [{"document": str, "score": float, "index": int}, ...]
         如果 rerank 失败，返回原始顺序
     """
     if not documents:
         return []
 
-    ai = get_ai_functions()
-    if ai is None:
-        # Fallback: 返回原始顺序
-        return [
-            {"document": doc, "score": 1.0 / (i + 1), "rank": i}
-            for i, doc in enumerate(documents[:top_k])
-        ]
+    reranked = jina_rerank(
+        query=query,
+        documents=documents,
+        model_name=model_name,
+        top_n=top_k,
+    )
 
-    # 从环境变量获取模型名称
-    if model_name is None:
-        model_name = os.getenv("RERANK_MODEL_NAME", "bge-reranker")
-
-    try:
-        reranked = ai.ai_rerank(
-            query=query,
-            documents=documents,
-            model_name=model_name,
-            top_k=top_k,
-        )
-        logger.debug(f"Rerank 完成: {len(reranked)} 条结果")
-        return reranked
-    except Exception as e:
-        logger.warning(f"Rerank 失败，使用原始排序: {e}")
-        # Fallback: 返回原始顺序
-        return [
-            {"document": doc, "score": 1.0 / (i + 1), "rank": i}
-            for i, doc in enumerate(documents[:top_k])
-        ]
+    logger.debug(f"Rerank completed: {len(reranked)} results")
+    return reranked
 
 
 def hybrid_search(
